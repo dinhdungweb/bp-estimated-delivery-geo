@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "b129a3cd18af63b2c8f25e704272d9bd"
+client_id = "fdf944db46b40d63062eb6d9b5abe80c"
 name = "BP: Estimated Delivery & Geo"
 application_url = "https://example.com"
 embedded = true
@@ -18,3 +18,8 @@ scopes = "read_customers,read_orders"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
+
+[app_proxy]
+url = "/apps/bp-delivery"
+subpath = "bp-delivery"
+prefix = "apps"

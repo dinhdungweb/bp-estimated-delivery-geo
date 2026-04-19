@@ -59,13 +59,79 @@ model AppSetting {
   shop            String   @unique
   isEnabled       Boolean  @default(true)
   widgetStyle     String   @default("modern")
+  
+  // Custom Content Fields
+  headerText      String?  @default("Receive your order : {min_date} to {max_date}")
+  subHeaderText   String?
+  step1Label      String?  @default("Order Now")
+  step1SubText    String?  @default("{order_date}")
+  step1Icon       String?  @default("bag")
+  step2Label      String?  @default("Ready to Ship")
+  step2SubText    String?  @default("{ship_date}")
+  step2Icon       String?  @default("truck")
+  step3Label      String?  @default("At Doorstep")
+  step3SubText    String?  @default("{max_date}")
+  step3Icon       String?  @default("home")
+
+  // Style Fields
   textColor       String   @default("#000000")
   iconColor       String   @default("#0033cc")
   bgColor         String   @default("#ffffff")
   borderColor     String   @default("#e5e7eb")
   borderRadius    Int      @default(10)
+  customBlocks    Json?
+  shadow          String?  @default("none")
+  glassmorphism   Boolean? @default(false)
+  padding         Int?     @default(0)
+  bgGradient      String?
   showTimeline    Boolean  @default(true)
   policyText      String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model Widget {
+  id              String   @id @default(uuid())
+  shop            String
+  name            String   @default("Untitled Widget")
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+
+  // Display Rules
+  targetCountries Json?    // e.g. ["US", "VN"]
+  targetProducts  Json?    // e.g. ["gid://shopify/Product/123"]
+  targetTags      Json?    // e.g. ["VIP", "Sale"]
+
+  // Styling & Content
+  widgetStyle     String   @default("custom")
+  customBlocks    Json?
+  textColor       String   @default("#000000")
+  iconColor       String   @default("#0033cc")
+  bgColor         String   @default("#ffffff")
+  borderColor     String   @default("#e5e7eb")
+  borderRadius    Int      @default(10)
+  shadow          String?  @default("none")
+  glassmorphism   Boolean? @default(false)
+  padding         Int?     @default(0)
+  bgGradient      String?
+  showTimeline    Boolean  @default(true)
+  policyText      String?  @db.Text
+
+  // Default content fields
+  headerText      String?
+  subHeaderText   String?
+  step1Label      String?
+  step1SubText    String?
+  step1Icon       String?
+  step2Label      String?
+  step2SubText    String?
+  step2Icon       String?
+  step3Label      String?
+  step3SubText    String?
+  step3Icon       String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop])
 }

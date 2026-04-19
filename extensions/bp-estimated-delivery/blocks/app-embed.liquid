@@ -1,0 +1,86 @@
+{% comment %}
+  ============================================================
+  BP: Estimated Delivery & Geo — App Embed Block
+  Copyright © 2025 BluePeaks. All rights reserved.
+  https://bluepeaks.top
+
+  This file is the APP EMBED version of the widget.
+  It appears in Theme Editor → App embeds, and auto-injects
+  the estimated delivery widget on product pages.
+  ============================================================
+{% endcomment %}
+
+{% if product %}
+{% assign widget_id = 'bp-delivery-embed' %}
+
+<style>
+  #{{ widget_id }} { font-family: inherit; margin: 12px 0; }
+  .bp-change-link { cursor: pointer; background: none; border: none; padding: 0; text-decoration: underline; font-size: 12px; }
+  .bp-change-link:hover { opacity: 0.75; }
+  .bp-skeleton { animation: bp-shimmer 1.5s infinite; padding: 14px 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+  .bp-skeleton-line { height: 14px; background: #e5e7eb; border-radius: 6px; margin-bottom: 8px; }
+  .bp-skeleton-line.short { width: 60%; }
+  @keyframes bp-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .bp-modal-overlay { display: none; position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+  .bp-modal-overlay.open { display: flex; }
+  .bp-modal { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: bp-modal-in 0.2s ease; }
+  @keyframes bp-modal-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  .bp-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .bp-modal-title { font-size: 16px; font-weight: 700; color: #111827; }
+  .bp-modal-close { font-size: 20px; background: none; border: none; cursor: pointer; color: #6b7280; line-height: 1; padding: 0; }
+  .bp-modal-label { font-size: 13px; color: #374151; margin-bottom: 6px; display: block; }
+  .bp-modal select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; appearance: none; background: #f9fafb url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23374151' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E") no-repeat right 12px center; cursor: pointer; }
+  .bp-modal-btn { margin-top: 14px; width: 100%; padding: 12px; background: #0033cc; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .bp-modal-btn:hover { opacity: 0.88; }
+  @keyframes bp-pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.2); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
+</style>
+
+<div id="bp-delivery-embed-content"
+     data-shop="{{ shop.permanent_domain }}"
+     data-product-id="{{ product.id }}"
+     data-product-tags="{{ product.tags | join: ',' }}"
+     style="display:none; margin: 12px 0;">
+  <div class="bp-skeleton" id="bp-delivery-embed-skeleton">
+    <div class="bp-skeleton-line" style="width:70%"></div>
+    <div class="bp-skeleton-line short"></div>
+  </div>
+</div>
+
+<div class="bp-modal-overlay" id="{{ widget_id }}-modal">
+  <div class="bp-modal">
+    <div class="bp-modal-header">
+      <span class="bp-modal-title">Shipping Location</span>
+      <button class="bp-modal-close" id="{{ widget_id }}-modal-close">✕</button>
+    </div>
+    <label class="bp-modal-label">Select your shipping country</label>
+    <select id="{{ widget_id }}-country-select">
+      <option value="AU">🇦🇺 Australia (AUD)</option>
+      <option value="US">🇺🇸 United States (USD)</option>
+      <option value="GB">🇬🇧 United Kingdom (GBP)</option>
+      <option value="CA">🇨🇦 Canada (CAD)</option>
+      <option value="FR">🇫🇷 France (EUR)</option>
+      <option value="DE">🇩🇪 Germany (EUR)</option>
+      <option value="SG">🇸🇬 Singapore (SGD)</option>
+      <option value="OTHER">🌍 Other Location</option>
+    </select>
+    <button class="bp-modal-btn" id="{{ widget_id }}-modal-save">Save &amp; Continue</button>
+  </div>
+</div>
+
+{{ 'bp-delivery.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'bp-delivery-embed.js' | asset_url }}" defer></script>
+
+{% endif %}
+
+{% schema %}
+{
+  "name": "BP: Estimated Delivery",
+  "target": "body",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Enable this app embed to automatically show the estimated delivery widget on all product pages. The widget will appear near the Add to Cart button."
+    }
+  ]
+}
+{% endschema %}

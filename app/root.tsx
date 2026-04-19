@@ -2,9 +2,11 @@ import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 import type { LinksFunction } from "react-router";
 
 import tailwindStyles from "./tailwind.css?url";
+import bpStyles from "./styles/bp-delivery.css?url";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: tailwindStyles },
+  { rel: "stylesheet", href: bpStyles },
 ];
 export default function App() {
   return (

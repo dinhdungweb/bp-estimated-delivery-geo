@@ -218,8 +218,9 @@ export default function RulesPage() {
   ));
 
   return (
-    <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 space-y-4 font-sans">
-      <div className="flex items-center justify-between mb-4">
+    <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
+      <div className="max-w-5xl mx-auto space-y-4">
+        <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Delivery Rules</h1>
           <p className="text-sm text-gray-500 mt-1">Configure estimated delivery times per country</p>
@@ -282,36 +283,79 @@ export default function RulesPage() {
         </div>
       </div>
 
-      <Card>
+      {/* RULES TABLE CARD */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
         {rules.length === 0 ? (
-          <EmptyState
-            heading="No delivery rules yet"
-            image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-            action={{
-              content: "Add your first rule",
-              onAction: () => setModalOpen(true),
-            }}
-          >
-            <p>Add delivery rules for each country to display estimated shipping dates on your product pages.</p>
-          </EmptyState>
+          <div className="p-16 text-center space-y-4">
+             <div className="text-4xl">🚚</div>
+             <div className="space-y-1">
+                <p className="text-base font-bold text-gray-800">No delivery rules yet</p>
+                <p className="text-sm text-gray-400">Add rules for each country to show estimated shipping dates.</p>
+             </div>
+             <button
+               onClick={() => setModalOpen(true)}
+               className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all"
+             >
+               Add your first rule
+             </button>
+          </div>
         ) : (
-          <IndexTable
-            resourceName={{ singular: "rule", plural: "rules" }}
-            itemCount={rules.length}
-            headings={[
-              { title: "Country" },
-              { title: "Delivery Time" },
-              { title: "Processing" },
-              { title: "Message" },
-              { title: "Status" },
-              { title: "Actions" },
-            ]}
-            selectable={false}
-          >
-            {rowMarkup}
-          </IndexTable>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse font-sans">
+               <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Country</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Delivery Time</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Processing</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-gray-50">
+                  {rules.map((rule: any) => (
+                    <tr key={rule.id} className="hover:bg-gray-50/50 transition-colors group">
+                       <td className="px-6 py-4">
+                          <Text variant="bodyMd" fontWeight="bold" as="span">{getCountryLabel(rule.countryCode)}</Text>
+                       </td>
+                       <td className="px-6 py-4">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-xs font-bold text-blue-700">
+                             {rule.minDays}–{rule.maxDays} days
+                          </span>
+                       </td>
+                       <td className="px-6 py-4">
+                          <span className="text-xs text-gray-500 font-medium">{rule.processingDays} day(s)</span>
+                       </td>
+                       <td className="px-6 py-4">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${rule.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                             <span className={`w-1 h-1 rounded-full ${rule.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
+                             {rule.isActive ? "Active" : "Inactive"}
+                          </span>
+                       </td>
+                       <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button
+                               onClick={() => handleToggle(rule.id, rule.isActive)}
+                               className={`px-3 py-1.5 border rounded-md text-xs font-bold transition-all shadow-sm ${
+                                 rule.isActive ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50' : 'bg-gray-900 border-gray-900 text-white hover:bg-gray-800'
+                               }`}
+                             >
+                               {rule.isActive ? "Disable" : "Enable"}
+                             </button>
+                             <button
+                               onClick={() => handleDelete(rule.id)}
+                               className="px-3 py-1.5 bg-white border border-red-200 rounded-md text-xs font-bold text-red-500 hover:bg-red-50 shadow-sm transition-all"
+                             >
+                               Delete
+                             </button>
+                          </div>
+                       </td>
+                    </tr>
+                  ))}
+               </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Modal tạo rule mới */}
       <Modal
@@ -378,6 +422,7 @@ export default function RulesPage() {
           </BlockStack>
         </Modal.Section>
       </Modal>
+      </div>
     </div>
   );
 }
