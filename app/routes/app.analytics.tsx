@@ -19,12 +19,50 @@ import { useState } from "react";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const analyticsDelegate = prisma.analyticsEvent;
 
-  const [totalRules, activeRules, settings] = await Promise.all([
+  const [totalRules, activeRules, settings, events] = await Promise.all([
     prisma.deliveryRule.count({ where: { shop } }),
     prisma.deliveryRule.count({ where: { shop, isActive: true } }),
     prisma.appSetting.findUnique({ where: { shop } }),
+    analyticsDelegate
+      ? analyticsDelegate
+          .findMany({
+            where: { shop, createdAt: { gte: since } },
+            orderBy: { createdAt: "desc" },
+            take: 5000,
+            select: {
+              eventType: true,
+              productId: true,
+              countryCode: true,
+            },
+          })
+          .catch(() => [])
+      : Promise.resolve([]),
   ]);
+
+  const countEvent = (eventType: string) =>
+    events.filter((event) => event.eventType === eventType).length;
+  const productCounts = new Map<string, number>();
+  const countryCounts = new Map<string, number>();
+
+  events.forEach((event) => {
+    if (event.eventType === "view" && event.productId) {
+      productCounts.set(event.productId, (productCounts.get(event.productId) || 0) + 1);
+    }
+    if (event.countryCode) {
+      countryCounts.set(event.countryCode, (countryCounts.get(event.countryCode) || 0) + 1);
+    }
+  });
+
+  const views = countEvent("view");
+  const hovers = countEvent("hover");
+  const clicks = countEvent("click");
+  const addToCart = countEvent("add_to_cart");
+  const engagementRate = views ? (((hovers + clicks) / views) * 100).toFixed(2) : "0.00";
+  const clickThroughRate = views ? ((clicks / views) * 100).toFixed(2) : "0.00";
+  const addToCartRate = views ? ((addToCart / views) * 100).toFixed(2) : "0.00";
 
   return data({
     shop,
@@ -32,6 +70,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     activeRules,
     isEnabled: settings?.isEnabled ?? false,
     widgetStyle: settings?.widgetStyle ?? "modern",
+    analytics: {
+      views,
+      hovers,
+      clicks,
+      addToCart,
+      countryChanges: countEvent("country_change"),
+      engagementRate,
+      clickThroughRate,
+      addToCartRate,
+      topProducts: Array.from(productCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([productId, count]) => ({ productId, count })),
+      customersByCountry: Array.from(countryCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([countryCode, count]) => ({ countryCode, count })),
+    },
   });
 };
 
@@ -68,19 +124,19 @@ function StatCard({
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { totalRules, activeRules, isEnabled, widgetStyle } =
+  const { totalRules, activeRules, isEnabled, widgetStyle, analytics } =
     useLoaderData<typeof loader>();
 
-  const [dateRange] = useState("Yesterday");
+  const [dateRange] = useState("Last 7 days");
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const countStats = [
     { label: "Total Rules", value: totalRules },
     { label: "Active rules", value: activeRules },
-    { label: "Hovers", value: 0 },
-    { label: "Clicks", value: 0 },
-    { label: "Add to cart", value: 0 },
-    { label: "Orders", value: 0 },
+    { label: "Views", value: analytics.views },
+    { label: "Hovers", value: analytics.hovers },
+    { label: "Clicks", value: analytics.clicks },
+    { label: "Add to cart", value: analytics.addToCart },
   ];
 
   const yLabels = ["1.0","0.9","0.8","0.7","0.6","0.5","0.4","0.3","0.2","0.1","0"];
@@ -122,7 +178,7 @@ export default function Dashboard() {
           <span>{dateRange}</span>
           <span className="text-gray-400 text-xs">▾</span>
         </button>
-        <span className="text-xs text-gray-400">Analytics are updated every 24 hours</span>
+        <span className="text-xs text-gray-400">Analytics are based on storefront events from the last 7 days</span>
       </div>
 
       {/* ─── Revenue & Time Saved ─────────────────────────────────────────────── */}
@@ -143,9 +199,9 @@ export default function Dashboard() {
 
       {/* ─── Rate Metrics ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Engagement rate" value="0.00 %" />
-        <StatCard label="Click-through rate" value="0.00 %" />
-        <StatCard label="Add to cart rate" value="0.00 %" />
+        <StatCard label="Engagement rate" value={`${analytics.engagementRate} %`} />
+        <StatCard label="Click-through rate" value={`${analytics.clickThroughRate} %`} />
+        <StatCard label="Add to cart rate" value={`${analytics.addToCartRate} %`} />
       </div>
 
       {/* ─── Count Stats ──────────────────────────────────────────────────────── */}
@@ -195,15 +251,37 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-sm font-semibold text-gray-700 mb-3">Top selling ETA products</p>
-          <div className="flex items-center justify-center h-28 text-xs text-gray-400">
-            There was no data found for this date range
-          </div>
+          {analytics.topProducts.length === 0 ? (
+            <div className="flex items-center justify-center h-28 text-xs text-gray-400">
+              There was no data found for this date range
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {analytics.topProducts.map((item) => (
+                <div key={item.productId} className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-gray-700">Product {item.productId}</span>
+                  <span className="text-gray-500">{item.count} views</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-sm font-semibold text-gray-700 mb-3">Customers by country</p>
-          <div className="flex items-center justify-center h-28 text-xs text-gray-400">
-            There was no data found for this date range
-          </div>
+          {analytics.customersByCountry.length === 0 ? (
+            <div className="flex items-center justify-center h-28 text-xs text-gray-400">
+              There was no data found for this date range
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {analytics.customersByCountry.map((item) => (
+                <div key={item.countryCode} className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-gray-700">{item.countryCode}</span>
+                  <span className="text-gray-500">{item.count} events</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

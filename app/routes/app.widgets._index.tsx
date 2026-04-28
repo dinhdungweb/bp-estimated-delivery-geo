@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { Prisma } from "@prisma/client";
 import { useLoaderData, useSubmit, useNavigate, data as routerData } from "react-router";
 import { 
   PlusIcon, 
@@ -9,10 +10,14 @@ import {
 import { Icon } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { buildFallbackBlocks, DEFAULT_SHIPPING_MESSAGE } from "../lib/delivery";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const widgets: any[] = await prisma.$queryRaw`SELECT * FROM "Widget" WHERE shop = ${session.shop} ORDER BY "createdAt" DESC`;
+  const widgets = await prisma.widget.findMany({
+    where: { shop: session.shop },
+    orderBy: { createdAt: "desc" },
+  });
   return routerData({ widgets });
 };
 
@@ -22,17 +27,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = formData.get("intent");
 
   if (intent === "create") {
-    const id = Math.random().toString(36).substr(2, 9);
-    await prisma.$executeRaw`
-      INSERT INTO "Widget" (id, shop, name, "isDefault", "isActive", "createdAt", "updatedAt")
-      VALUES (${id}, ${session.shop}, 'New Widget', false, true, NOW(), NOW())
-    `;
-    return routerData({ widgetId: id });
+    const widget = await prisma.widget.create({
+      data: {
+        shop: session.shop,
+        name: "New Widget",
+        isDefault: false,
+        isActive: true,
+        padding: 16,
+        customBlocks: buildFallbackBlocks(
+          {},
+          DEFAULT_SHIPPING_MESSAGE,
+        ) as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return routerData({ widgetId: widget.id });
   }
 
   if (intent === "delete") {
     const id = String(formData.get("id"));
-    await prisma.$executeRaw`DELETE FROM "Widget" WHERE id = ${id} AND shop = ${session.shop}`;
+    await prisma.widget.deleteMany({ where: { id, shop: session.shop } });
     return routerData({ success: true });
   }
 

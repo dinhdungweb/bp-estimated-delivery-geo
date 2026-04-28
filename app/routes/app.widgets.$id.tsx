@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { Prisma } from "@prisma/client";
 import { useLoaderData, useSubmit, useNavigation, useNavigate, useActionData, data as routerData } from "react-router";
 import React, { useState, useCallback, useEffect } from "react";
 import { 
@@ -39,15 +40,46 @@ import prisma from "../db.server";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
 import { IconLibraryModal } from "../components/IconLibraryModal";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
-import type { WidgetStyleId } from "../components/WidgetRenderer";
+import {
+  buildFallbackBlocks,
+  normalizeCountries,
+  normalizePolicyItems,
+  normalizeProductIds,
+  normalizeStepItems,
+  normalizeTags,
+  normalizeTrustBadges,
+  parseBlockConfigs,
+  parseJsonArrayField,
+} from "../lib/delivery";
+import type { BlockType, PolicyItemConfig, StepItemConfig, TrustBadgeConfig, WidgetStyleId } from "../lib/delivery";
+import {
+  createTemplatePalette,
+  hydrateBlockStyleSamples,
+  samplePolicyItemColors,
+  sampleStepColors,
+  sampleTrustBadgeColors,
+  stripGeneratedStyleSamples,
+} from "../lib/widgetStyleSamples";
+import type { TemplatePalette } from "../lib/widgetStyleSamples";
 import Chrome from '@uiw/react-color-chrome';
 import { createPortal } from "react-dom";
 
 // ─── Reusable Elite Pro Color Picker (Genuine Chrome Style) ──────────────────
+const normalizeColorInput = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const clean = trimmed.replace(/^#+/, "");
+  return /^[0-9a-f]{3,8}$/i.test(clean) ? `#${clean}` : trimmed;
+};
+
+const colorInputValue = (value: string) => value.trim().replace(/^#+/, "");
+
 const ColorField = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => {
   const [active, setActive] = useState(false);
   const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const normalizedColor = normalizeColorInput(value);
+  const pickerColor = /^#[0-9a-f]{3,8}$/i.test(normalizedColor) ? normalizedColor : '#000000';
   
   const toggleActive = useCallback(() => {
     if (!active && containerRef.current) {
@@ -76,7 +108,7 @@ const ColorField = ({ label, value, onChange }: { label: string; value: string; 
       style={{ 
         width: '32px', height: '32px', borderRadius: '4px', overflow: 'hidden', 
         border: '1px solid #e1e3e5', cursor: 'pointer',
-        background: value || '#000000', transition: 'all 0.2s',
+        background: pickerColor, transition: 'all 0.2s',
         boxShadow: active ? '0 0 0 2px #008060, 0 4px 12px rgba(0,0,0,0.1)' : 'none'
       }} 
     />
@@ -87,8 +119,13 @@ const ColorField = ({ label, value, onChange }: { label: string; value: string; 
       <Text variant="bodySm" as="p">{label}</Text>
       <InlineStack gap="200" blockAlign="center">
         <div style={{ flex: 1 }}>
-          <TextField 
-            label={label} labelHidden value={value} onChange={onChange} autoComplete="off" prefix="#" 
+          <TextField
+            label={label}
+            labelHidden
+            value={colorInputValue(value)}
+            onChange={(nextValue) => onChange(normalizeColorInput(nextValue))}
+            autoComplete="off"
+            prefix="#"
           />
         </div>
         <div style={{ position: 'relative' }}>
@@ -108,8 +145,8 @@ const ColorField = ({ label, value, onChange }: { label: string; value: string; 
                 borderRadius: '8px', overflow: 'hidden'
               }}>
                 <Chrome 
-                  color={value || '#000000'} 
-                  onChange={(color: any) => onChange(color.hexa)} 
+                  color={pickerColor} 
+                  onChange={(color: any) => onChange(normalizeColorInput(color.hexa))} 
                 />
               </div>
             </>,
@@ -122,6 +159,98 @@ const ColorField = ({ label, value, onChange }: { label: string; value: string; 
 };
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
+const createEditorId = (prefix: string) => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid ? `${prefix}-${uuid}` : `${prefix}-${Date.now()}`;
+};
+
+const defaultStepItems = (palette: TemplatePalette): StepItemConfig[] => [
+  { id: createEditorId("step"), label: "Order now", subText: "{order_date}", icon: "bag", ...sampleStepColors(palette, 0) },
+  { id: createEditorId("step"), label: "Ships", subText: "{ship_date}", icon: "package", ...sampleStepColors(palette, 1) },
+  { id: createEditorId("step"), label: "Delivered", subText: "{max_date}", icon: "map_pin", ...sampleStepColors(palette, 2) },
+];
+
+const defaultTrustBadges = (palette: TemplatePalette): TrustBadgeConfig[] => [
+  { id: createEditorId("trust"), icon: "shield", label: "Tracked", subText: "Updates included", ...sampleTrustBadgeColors(palette, 0) },
+  { id: createEditorId("trust"), icon: "check_badge", label: "Reliable", subText: "Clear ETA", ...sampleTrustBadgeColors(palette, 1) },
+  { id: createEditorId("trust"), icon: "truck", label: "Fast dispatch", subText: "Ships soon", ...sampleTrustBadgeColors(palette, 2) },
+];
+
+const defaultPolicyItems = (palette: TemplatePalette): PolicyItemConfig[] => [
+  {
+    id: createEditorId("policy"),
+    title: "Shipping & delivery",
+    body: "Orders are prepared quickly and shipped with tracking when available.",
+    icon: "truck",
+    ...samplePolicyItemColors(palette, 0),
+  },
+  {
+    id: createEditorId("policy"),
+    title: "Returns",
+    body: "Easy returns are available according to store policy.",
+    icon: "shield",
+    ...samplePolicyItemColors(palette, 1),
+  },
+];
+
+const blockLabels: Record<string, string> = {
+  header: "Header",
+  promise_card: "Promise Card",
+  steps: "Steps",
+  timer: "Countdown Timer",
+  banner: "Banner",
+  trust_badges: "Trust Badges",
+  policy_accordion: "Policy Accordion",
+  progress: "Progress Bar",
+  image: "Image",
+  spacer: "Spacer",
+  divider: "Divider",
+  dual_info: "Dual Info",
+  html: "HTML",
+  policy: "Policy",
+};
+
+const lordiconPresetOptions = [
+  { label: "Auto from current icon", value: "auto" },
+  { label: "Shopping cart", value: "cart" },
+  { label: "Shopping bag", value: "bag" },
+  { label: "Package / box", value: "package" },
+  { label: "Delivery truck", value: "truck" },
+  { label: "Map pin", value: "map_pin" },
+  { label: "Home", value: "home" },
+  { label: "Shield", value: "shield" },
+  { label: "Clock", value: "clock" },
+  { label: "Rocket", value: "rocket" },
+  { label: "Heart", value: "heart" },
+  { label: "Store", value: "store" },
+  { label: "Custom URL", value: "custom" },
+];
+
+const lordiconTriggerOptions = [
+  { label: "Loop on hover", value: "loop-on-hover" },
+  { label: "Loop", value: "loop" },
+  { label: "Hover", value: "hover" },
+  { label: "Click", value: "click" },
+  { label: "Intro", value: "in" },
+  { label: "Boomerang", value: "boomerang" },
+  { label: "Morph", value: "morph" },
+  { label: "Sequence", value: "sequence" },
+];
+
+const lordiconStrokeOptions = [
+  { label: "Light", value: "light" },
+  { label: "Regular", value: "regular" },
+  { label: "Bold", value: "bold" },
+];
+
+const getBlockLabel = (type: string) =>
+  blockLabels[type] ||
+  type
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
 export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const widgetId = params.id;
@@ -130,14 +259,18 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   
   if (widgetId === "new") {
     // Return default data based on template
-    const defaultData = TEMPLATE_DEFAULTS[templateId as WidgetStyleId] || TEMPLATE_DEFAULTS.clean_horizontal;
+    const defaultData =
+      TEMPLATE_DEFAULTS[templateId as WidgetStyleId] || TEMPLATE_DEFAULTS.eco_delivery;
     return routerData({ 
       widget: {
         id: "new",
         name: `New Widget (${templateId || 'General'})`,
         isActive: true,
+        isDefault: false,
         widgetStyle: defaultData.style,
-        customBlocks: defaultData.customBlocks,
+        customBlocks: defaultData.customBlocks?.length
+          ? defaultData.customBlocks
+          : buildFallbackBlocks(defaultData),
         textColor: defaultData.textColor || "#000000",
         iconColor: defaultData.iconColor || "#0033cc",
         bgColor: defaultData.bgColor || "#ffffff",
@@ -149,16 +282,19 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
         bgGradient: defaultData.bgGradient || "",
         showTimeline: defaultData.showTimeline ?? true,
         targetCountries: [],
+        targetProducts: [],
         targetTags: [],
       } 
     });
   }
 
-  const result: any[] = await prisma.$queryRaw`SELECT * FROM "Widget" WHERE id = ${widgetId} AND shop = ${session.shop} LIMIT 1`;
+  const widget = await prisma.widget.findFirst({
+    where: { id: widgetId, shop: session.shop },
+  });
 
-  if (!result || result.length === 0) throw new Error("Widget not found");
+  if (!widget) throw new Error("Widget not found");
 
-  return routerData({ widget: result[0] });
+  return routerData({ widget });
 };
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -169,7 +305,7 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
   const name = String(formData.get("name"));
   const isActive = formData.get("isActive") === "true";
   const widgetStyle = String(formData.get("widgetStyle"));
-  const customBlocks = String(formData.get("customBlocks"));
+  const customBlocksRaw = parseJsonArrayField(formData.get("customBlocks"));
   const textColor = String(formData.get("textColor"));
   const iconColor = String(formData.get("iconColor"));
   const bgColor = String(formData.get("bgColor"));
@@ -180,15 +316,25 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
   const padding = parseInt(String(formData.get("padding")) || "16");
   const bgGradient = String(formData.get("bgGradient"));
   const showTimeline = formData.get("showTimeline") === "true";
-  const targetCountries = String(formData.get("targetCountries"));
-  const targetTags = String(formData.get("targetTags"));
+  const targetCountriesRaw = parseJsonArrayField(formData.get("targetCountries"));
+  const targetProductsRaw = parseJsonArrayField(formData.get("targetProducts"));
+  const targetTagsRaw = parseJsonArrayField(formData.get("targetTags"));
+
+  if (!customBlocksRaw || !targetCountriesRaw || !targetProductsRaw || !targetTagsRaw) {
+    return routerData({ error: "Invalid widget payload" }, { status: 400 });
+  }
+
+  const customBlocks = parseBlockConfigs(customBlocksRaw);
+  const targetCountries = normalizeCountries(targetCountriesRaw);
+  const targetProducts = normalizeProductIds(targetProductsRaw);
+  const targetTags = normalizeTags(targetTagsRaw);
 
   const data = {
     shop: session.shop,
     name,
     isActive,
     widgetStyle,
-    customBlocks: JSON.parse(customBlocks),
+    customBlocks: customBlocks as unknown as Prisma.InputJsonValue,
     textColor,
     iconColor,
     bgColor,
@@ -199,37 +345,20 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
     padding,
     bgGradient,
     showTimeline,
-    targetCountries: JSON.parse(targetCountries),
-    targetTags: JSON.parse(targetTags),
+    targetCountries: targetCountries as Prisma.InputJsonValue,
+    targetProducts: targetProducts as Prisma.InputJsonValue,
+    targetTags: targetTags as Prisma.InputJsonValue,
   };
 
   if (id === "new") {
-    const newWidget = await (prisma as any).widget.create({ data });
+    const newWidget = await prisma.widget.create({ data });
     return routerData({ success: true, newId: newWidget.id });
   }
 
-  await prisma.$executeRaw`
-    UPDATE "Widget" 
-    SET 
-      name = ${name}, 
-      "isActive" = ${isActive}, 
-      "widgetStyle" = ${widgetStyle}, 
-      "customBlocks" = ${customBlocks}::jsonb,
-      "textColor" = ${textColor},
-      "iconColor" = ${iconColor},
-      "bgColor" = ${bgColor},
-      "borderColor" = ${borderColor},
-      "borderRadius" = ${borderRadius},
-      shadow = ${shadow},
-      glassmorphism = ${glassmorphism},
-      padding = ${padding},
-      "bgGradient" = ${bgGradient},
-      "showTimeline" = ${showTimeline},
-      "targetCountries" = ${targetCountries}::jsonb,
-      "targetTags" = ${targetTags}::jsonb,
-      "updatedAt" = NOW()
-    WHERE id = ${id} AND shop = ${session.shop}
-  `;
+  await prisma.widget.updateMany({
+    where: { id, shop: session.shop },
+    data,
+  });
 
   return routerData({ success: true });
 };
@@ -267,10 +396,22 @@ export default function VisualBuilderStudio() {
   const [showTimeline, setShowTimeline] = useState(widget.showTimeline ?? true);
   const [isActive] = useState(widget.isActive);
   const [isDefault] = useState(widget.isDefault);
+  const templatePalette = createTemplatePalette({ textColor, iconColor, bgColor, borderColor });
 
-  const [blocks, setBlocks] = useState<any[]>(Array.isArray(widget.customBlocks) ? widget.customBlocks : []);
-  const [targetCountries, setTargetCountries] = useState<string[]>(Array.isArray(widget.targetCountries) ? widget.targetCountries as string[] : []);
-  const [targetTags, setTargetTags] = useState<string[]>(Array.isArray(widget.targetTags) ? widget.targetTags as string[] : []);
+  const [blocks, setBlocks] = useState<any[]>(() =>
+    parseBlockConfigs(widget.customBlocks).map((block) =>
+      block.id.startsWith("block-") ? block : stripGeneratedStyleSamples(block, templatePalette),
+    ),
+  );
+  const [targetCountries, setTargetCountries] = useState<string[]>(
+    normalizeCountries(widget.targetCountries),
+  );
+  const [targetProducts, setTargetProducts] = useState<string[]>(
+    normalizeProductIds(widget.targetProducts),
+  );
+  const [targetTags, setTargetTags] = useState<string[]>(
+    normalizeTags(widget.targetTags),
+  );
   const [iconPickerTarget, setIconPickerTarget] = useState<{ blockId?: string; field?: string; open: boolean }>({ open: false });
 
   const handleSave = useCallback(() => {
@@ -292,26 +433,87 @@ export default function VisualBuilderStudio() {
     formData.append("showTimeline", String(showTimeline));
     formData.append("policyText", "");
     formData.append("targetCountries", JSON.stringify(targetCountries));
+    formData.append("targetProducts", JSON.stringify(targetProducts));
     formData.append("targetTags", JSON.stringify(targetTags));
     
     submit(formData, { method: "post" });
-  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetTags, submit]);
+  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, submit]);
 
   const addBlock = (type: string) => {
-    const id = `b${Date.now()}`;
+    const id = createEditorId("block");
     const defaultSettings: any = {};
     if (type === 'steps') {
+      defaultSettings.preset = "timeline_dots";
       defaultSettings.borderRadius = 12;
       defaultSettings.itemGap = 16;
       defaultSettings.padding = 16;
       defaultSettings.iconSize = 24;
       defaultSettings.borderWidth = 1;
+      defaultSettings.items = defaultStepItems(templatePalette);
+    }
+    if (type === 'promise_card') {
+      defaultSettings.title = "Get it by {max_date}";
+      defaultSettings.subtitle = "Order today for estimated delivery between {min_date} and {max_date}.";
+      defaultSettings.badgeText = "Tracked";
+      defaultSettings.icon = "truck";
+      defaultSettings.tone = "success";
+      defaultSettings.align = "left";
+    }
+    if (type === 'policy_accordion') {
+      defaultSettings.openFirst = true;
+      defaultSettings.items = defaultPolicyItems(templatePalette);
+    }
+    if (type === 'trust_badges') {
+      defaultSettings.badges = defaultTrustBadges(templatePalette);
+    }
+    if (type === 'timer') {
+      defaultSettings.text = "Order in {countdown}";
+      defaultSettings.animate = true;
     }
     if (type === 'header') {
+      defaultSettings.text = "Estimated delivery";
+      defaultSettings.subText = "Order today for delivery between {min_date} and {max_date}.";
+      defaultSettings.icon = "truck";
+      defaultSettings.iconPosition = "left";
+      defaultSettings.align = "left";
+      defaultSettings.fontSize = "md";
+      defaultSettings.fontWeight = "700";
       defaultSettings.padding = 12;
       defaultSettings.iconSize = 24;
     }
-    setBlocks([...blocks, { id, type, settings: defaultSettings }]);
+    if (type === 'banner') {
+      defaultSettings.type = "info";
+      defaultSettings.styleType = "solid";
+      defaultSettings.align = "left";
+      defaultSettings.icon = "shield";
+      defaultSettings.text = "Tracked shipping with clear delivery updates.";
+    }
+    if (type === 'progress') {
+      defaultSettings.label = "Route prepared";
+      defaultSettings.percentage = 70;
+      defaultSettings.color = templatePalette.accent;
+    }
+    if (type === 'dual_info') {
+      defaultSettings.leftIcon = "truck";
+      defaultSettings.leftTitle = "Fast dispatch";
+      defaultSettings.leftText = "Packed and handed to carrier by {ship_date}.";
+      defaultSettings.rightIcon = "map_pin";
+      defaultSettings.rightTitle = "Delivery window";
+      defaultSettings.rightText = "Estimated arrival {min_date} - {max_date}.";
+    }
+    if (type === 'image') {
+      defaultSettings.url = "/sample-product.png";
+      defaultSettings.align = "center";
+      defaultSettings.height = "120px";
+    }
+    if (type === 'divider') {
+      defaultSettings.height = 1;
+      defaultSettings.color = borderColor;
+    }
+    if (type === 'spacer') {
+      defaultSettings.height = 16;
+    }
+    setBlocks([...blocks, hydrateBlockStyleSamples({ id, type: type as BlockType, settings: defaultSettings }, templatePalette)]);
     setActiveBlockId(id);
     setActiveTab(0);
   };
@@ -333,9 +535,124 @@ export default function VisualBuilderStudio() {
     setBlocks(blocks.map(b => b.id === id ? { ...b, settings: { ...b.settings, ...newSettings } } : b));
   };
 
+  const getBlockSettings = (blockId: string) =>
+    blocks.find((b) => b.id === blockId)?.settings || {};
+
+  const updateStepItem = (blockId: string, itemId: string, patch: Partial<StepItemConfig>) => {
+    const items = normalizeStepItems(getBlockSettings(blockId)).map((item) =>
+      item.id === itemId ? { ...item, ...patch } : item,
+    );
+    updateBlockSettings(blockId, { items });
+  };
+
+  const addStepItem = (blockId: string) => {
+    const items = normalizeStepItems(getBlockSettings(blockId));
+    if (items.length >= 6) return;
+    updateBlockSettings(blockId, {
+      items: [
+        ...items,
+        {
+          id: createEditorId("step"),
+          label: "New step",
+          subText: "{max_date}",
+          icon: "package",
+          ...sampleStepColors(templatePalette, items.length),
+        },
+      ],
+    });
+  };
+
+  const removeStepItem = (blockId: string, itemId: string) => {
+    const items = normalizeStepItems(getBlockSettings(blockId));
+    if (items.length <= 2) return;
+    updateBlockSettings(blockId, { items: items.filter((item) => item.id !== itemId) });
+  };
+
+  const moveStepItem = (blockId: string, index: number, direction: "up" | "down") => {
+    const items = normalizeStepItems(getBlockSettings(blockId));
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= items.length) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    updateBlockSettings(blockId, { items });
+  };
+
+  const updateTrustBadge = (blockId: string, badgeId: string, patch: Partial<TrustBadgeConfig>) => {
+    const badges = normalizeTrustBadges(getBlockSettings(blockId)).map((badge) =>
+      badge.id === badgeId ? { ...badge, ...patch } : badge,
+    );
+    updateBlockSettings(blockId, { badges });
+  };
+
+  const addTrustBadge = (blockId: string) => {
+    const badges = normalizeTrustBadges(getBlockSettings(blockId));
+    if (badges.length >= 8) return;
+    updateBlockSettings(blockId, {
+      badges: [
+        ...badges,
+        {
+          id: createEditorId("trust"),
+          icon: "shield",
+          label: "Trust badge",
+          subText: "Helpful detail",
+          ...sampleTrustBadgeColors(templatePalette, badges.length),
+        },
+      ],
+    });
+  };
+
+  const removeTrustBadge = (blockId: string, badgeId: string) => {
+    const badges = normalizeTrustBadges(getBlockSettings(blockId));
+    if (badges.length <= 1) return;
+    updateBlockSettings(blockId, { badges: badges.filter((badge) => badge.id !== badgeId) });
+  };
+
+  const moveTrustBadge = (blockId: string, index: number, direction: "up" | "down") => {
+    const badges = normalizeTrustBadges(getBlockSettings(blockId));
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= badges.length) return;
+    [badges[index], badges[target]] = [badges[target], badges[index]];
+    updateBlockSettings(blockId, { badges });
+  };
+
+  const updatePolicyItem = (blockId: string, itemId: string, patch: Partial<PolicyItemConfig>) => {
+    const items = normalizePolicyItems(getBlockSettings(blockId)).map((item) =>
+      item.id === itemId ? { ...item, ...patch } : item,
+    );
+    updateBlockSettings(blockId, { items });
+  };
+
+  const addPolicyItem = (blockId: string) => {
+    const items = normalizePolicyItems(getBlockSettings(blockId));
+    if (items.length >= 5) return;
+    updateBlockSettings(blockId, {
+      items: [
+        ...items,
+        {
+          id: createEditorId("policy"),
+          title: "Policy item",
+          body: "Add a short customer-facing policy detail.",
+          icon: "shield",
+          ...samplePolicyItemColors(templatePalette, items.length),
+        },
+      ],
+    });
+  };
+
+  const removePolicyItem = (blockId: string, itemId: string) => {
+    const items = normalizePolicyItems(getBlockSettings(blockId));
+    if (items.length <= 1) return;
+    updateBlockSettings(blockId, { items: items.filter((item) => item.id !== itemId) });
+  };
+
+  const movePolicyItem = (blockId: string, index: number, direction: "up" | "down") => {
+    const items = normalizePolicyItems(getBlockSettings(blockId));
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= items.length) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    updateBlockSettings(blockId, { items });
+  };
+
   const getActiveBlock = () => blocks.find(b => b.id === activeBlockId);
-
-
 
   const renderBlockEditor = () => {
     const activeBlock = getActiveBlock();
@@ -351,11 +668,12 @@ export default function VisualBuilderStudio() {
     }
 
     const { type, settings: s, id } = activeBlock;
+    const stepUsesConnector = type === "steps" && (s.preset === "timeline_dots" || s.preset === "vertical");
 
     return (
       <BlockStack gap="400">
         <InlineStack align="space-between">
-          <Text variant="headingMd" as="h3">Edit {type.replace('_',' ')}</Text>
+          <Text variant="headingMd" as="h3">Edit {getBlockLabel(type)}</Text>
           <Button variant="tertiary" tone="critical" icon={DeleteIcon} onClick={() => removeBlock(id)} />
         </InlineStack>
         
@@ -369,11 +687,19 @@ export default function VisualBuilderStudio() {
                <div style={{ flex: 1 }}><Select label="Font Size" options={[{label:'Small',value:'sm'},{label:'Medium',value:'md'},{label:'Large',value:'lg'}]} value={s.fontSize || 'md'} onChange={(v) => updateBlockSettings(id, { fontSize: v })} /></div>
                <div style={{ flex: 1 }}><Select label="Weight" options={[{label:'Normal',value:'400'},{label:'Bold',value:'700'},{label:'Black',value:'900'}]} value={s.fontWeight || '700'} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} /></div>
             </InlineStack>
+            <RangeSlider label="Title Size" min={10} max={32} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+            <RangeSlider label="Sub-text Size" min={9} max={24} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
+            <RangeSlider label="Text Gap" min={0} max={24} value={Number(s.textGap ?? 2)} onChange={(v) => updateBlockSettings(id, { textGap: Number(v) })} output />
             <InlineStack gap="200">
                <div style={{ flex: 1 }}><Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'},{label:'Right',value:'right'}]} value={s.align || 'center'} onChange={(v) => updateBlockSettings(id, { align: v })} /></div>
                <div style={{ flex: 1 }}><Select label="Icon Position" options={[{label:'Top',value:'top'},{label:'Bottom',value:'bottom'},{label:'Left',value:'left'},{label:'Right',value:'right'}]} value={s.iconPosition || 'top'} onChange={(v) => updateBlockSettings(id, { iconPosition: v })} /></div>
             </InlineStack>
             <Divider />
+            <Text variant="bodySm" fontWeight="bold" as="p">Part Colors</Text>
+            <ColorField label="Title Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
+            <ColorField label="Sub-text Color" value={s.subTextColor || ""} onChange={(v) => updateBlockSettings(id, { subTextColor: v })} />
+            <ColorField label="Icon Color" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
+            <ColorField label="Background Fill" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
             <Divider />
             <Text variant="bodySm" fontWeight="bold" as="p">Shapes & Visuals</Text>
             <RangeSlider label="Icon Size" min={12} max={48} value={s.iconSize ?? 24} onChange={(v) => updateBlockSettings(id, { iconSize: v })} output />
@@ -430,14 +756,16 @@ export default function VisualBuilderStudio() {
                           onChange={(v) => updateBlockSettings(id, { decorator: v })} 
                         />
                       </div>
-                      <div style={{ width: '80px' }}>
-                        <Select 
-                          label="Line" labelHidden 
-                          options={[{label:'Solid',value:'solid'},{label:'Dash',value:'dashed'},{label:'Dot',value:'dotted'}]} 
-                          value={s.connectorStyle || 'solid'} 
-                          onChange={(v) => updateBlockSettings(id, { connectorStyle: v })} 
-                        />
-                      </div>
+                      {stepUsesConnector && (
+                        <div style={{ width: '80px' }}>
+                          <Select 
+                            label="Line" labelHidden 
+                            options={[{label:'Solid',value:'solid'},{label:'Dash',value:'dashed'},{label:'Dot',value:'dotted'}]} 
+                            value={s.connectorStyle || 'solid'} 
+                            onChange={(v) => updateBlockSettings(id, { connectorStyle: v })} 
+                          />
+                        </div>
+                      )}
                     </InlineStack>
                   </InlineStack>
                   <Divider />
@@ -477,51 +805,134 @@ export default function VisualBuilderStudio() {
                     </div>
                     <div style={{ touchAction: 'none' }}>
                       <RangeSlider 
-                        label="Inner Gap" min={0} max={40} 
+                        label="Item Padding" min={0} max={40} 
                         value={Number(s.padding ?? 16)} 
                         onChange={(v) => updateBlockSettings(id, { padding: v })} 
                         output 
                       />
                     </div>
+                    <RangeSlider label="Label Size" min={10} max={24} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
+                    <RangeSlider label="Sub-text Size" min={9} max={20} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
+                    <RangeSlider label="Dot Border Width" min={0} max={8} value={Number(s.dotBorderWidth ?? 2)} onChange={(v) => updateBlockSettings(id, { dotBorderWidth: Number(v) })} output />
                   </BlockStack>
                   <Divider />
                 
-                {[1, 2, 3].map(num => (
-                  <div key={num} style={{ position: 'relative', zIndex: 4 - num }}>
+                {normalizeStepItems(s).map((item, index, items) => (
+                  <div key={item.id} style={{ position: 'relative', zIndex: items.length - index }}>
                     <Card padding="300">
                       <BlockStack gap="200">
-                        <Text variant="bodySm" fontWeight="bold" as="p">Step {num}</Text>
-                        <TextField 
-                          label="Label" 
-                          value={s[`step${num}Label`] || (num === 1 ? 'Order' : num === 2 ? 'Ship' : 'Delivery')} 
-                          onChange={(v) => updateBlockSettings(id, { [`step${num}Label`]: v })} 
-                          autoComplete="off" 
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text variant="bodySm" fontWeight="bold" as="p">Step {index + 1}</Text>
+                          <InlineStack gap="100">
+                            <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => moveStepItem(id, index, "up")} />
+                            <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === items.length - 1} onClick={() => moveStepItem(id, index, "down")} />
+                            <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={items.length <= 2} onClick={() => removeStepItem(id, item.id)} />
+                          </InlineStack>
+                        </InlineStack>
+                        <TextField
+                          label="Label"
+                          value={item.label}
+                          onChange={(v) => updateStepItem(id, item.id, { label: v })}
+                          autoComplete="off"
                         />
-                        <TextField 
-                          label="Sub-text" 
-                          value={s[`step${num}SubText`] || (num === 1 ? 'Today' : num === 2 ? 'Tomorrow' : 'Friday')} 
-                          onChange={(v) => updateBlockSettings(id, { [`step${num}SubText`]: v })} 
-                          autoComplete="off" 
+                        <TextField
+                          label="Sub-text"
+                          value={item.subText}
+                          onChange={(v) => updateStepItem(id, item.id, { subText: v })}
+                          autoComplete="off"
                         />
-                        <Button onClick={() => setIconPickerTarget({ blockId: id, field: `step${num}Icon`, open: true })}>
-                          {s[`step${num}Icon`] ? `Icon: ${s[`step${num}Icon`]}` : 'Pick Icon'}
+                        <Button onClick={() => setIconPickerTarget({ blockId: id, field: `stepItem:${item.id}`, open: true })}>
+                          {item.icon ? `Icon: ${item.icon}` : 'Pick Icon'}
                         </Button>
-                        <ColorField label="Step Background" value={s[`step${num}Bg`] || ""} onChange={(v) => updateBlockSettings(id, { [`step${num}Bg`]: v })} />
+                        <ColorField label="Step Background" value={item.bgColor || ""} onChange={(v) => updateStepItem(id, item.id, { bgColor: v })} />
+                        <ColorField label="Dot Background" value={item.dotColor || ""} onChange={(v) => updateStepItem(id, item.id, { dotColor: v })} />
+                        <ColorField label="Icon Color" value={item.iconColor || ""} onChange={(v) => updateStepItem(id, item.id, { iconColor: v })} />
+                        <ColorField label="Label Color" value={item.labelColor || ""} onChange={(v) => updateStepItem(id, item.id, { labelColor: v })} />
+                        <ColorField label="Sub-text Color" value={item.subTextColor || ""} onChange={(v) => updateStepItem(id, item.id, { subTextColor: v })} />
+                        <ColorField label="Border Color" value={item.borderColor || ""} onChange={(v) => updateStepItem(id, item.id, { borderColor: v })} />
                       </BlockStack>
                     </Card>
                   </div>
                 ))}
+                <Button icon={PlusIcon} onClick={() => addStepItem(id)} disabled={normalizeStepItems(s).length >= 6}>
+                  Add step
+                </Button>
               </BlockStack>
             )}
+          </BlockStack>
+        )}
+
+        {type === 'promise_card' && (
+          <BlockStack gap="300">
+            <TextField label="Title" value={s.title || ""} onChange={(v) => updateBlockSettings(id, { title: v })} autoComplete="off" />
+            <TextField label="Subtitle" value={s.subtitle || ""} onChange={(v) => updateBlockSettings(id, { subtitle: v })} autoComplete="off" multiline={2} />
+            <TextField label="Badge text" value={s.badgeText || ""} onChange={(v) => updateBlockSettings(id, { badgeText: v })} autoComplete="off" />
+            <InlineStack gap="200">
+              <div style={{ flex: 1 }}>
+                <Select
+                  label="Tone"
+                  options={[
+                    { label: "Success", value: "success" },
+                    { label: "Info", value: "info" },
+                    { label: "Warning", value: "warning" },
+                    { label: "Premium", value: "premium" },
+                  ]}
+                  value={s.tone || "success"}
+                  onChange={(v) => updateBlockSettings(id, { tone: v })}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Select
+                  label="Alignment"
+                  options={[
+                    { label: "Left", value: "left" },
+                    { label: "Center", value: "center" },
+                    { label: "Right", value: "right" },
+                  ]}
+                  value={s.align || "left"}
+                  onChange={(v) => updateBlockSettings(id, { align: v })}
+                />
+              </div>
+            </InlineStack>
+            <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
+              {s.icon ? `Icon: ${s.icon}` : "Pick Icon"}
+            </Button>
+            <ColorField label="Background" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+            <ColorField label="Border" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+            <ColorField label="Title Color" value={s.titleColor || s.textColor || ""} onChange={(v) => updateBlockSettings(id, { titleColor: v })} />
+            <ColorField label="Subtitle Color" value={s.subtitleColor || ""} onChange={(v) => updateBlockSettings(id, { subtitleColor: v })} />
+            <ColorField label="Icon" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
+            <ColorField label="Icon Background" value={s.iconBgColor || ""} onChange={(v) => updateBlockSettings(id, { iconBgColor: v })} />
+            <ColorField label="Badge Background" value={s.badgeBgColor || ""} onChange={(v) => updateBlockSettings(id, { badgeBgColor: v })} />
+            <ColorField label="Badge Text" value={s.badgeTextColor || ""} onChange={(v) => updateBlockSettings(id, { badgeTextColor: v })} />
+            <RangeSlider label="Icon Size" min={12} max={48} value={Number(s.iconSize ?? 24)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+            <RangeSlider label="Icon Box Size" min={28} max={72} value={Number(s.iconBoxSize ?? 42)} onChange={(v) => updateBlockSettings(id, { iconBoxSize: Number(v) })} output />
+            <RangeSlider label="Icon Box Radius" min={0} max={80} value={Number(s.iconBoxRadius ?? 40)} onChange={(v) => updateBlockSettings(id, { iconBoxRadius: Number(v) })} output />
+            <RangeSlider label="Title Size" min={10} max={26} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+            <RangeSlider label="Subtitle Size" min={9} max={20} value={Number(s.subtitleFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subtitleFontSize: Number(v) })} output />
+            <RangeSlider label="Badge Size" min={9} max={18} value={Number(s.badgeFontSize ?? 11)} onChange={(v) => updateBlockSettings(id, { badgeFontSize: Number(v) })} output />
+            <RangeSlider label="Badge Radius" min={0} max={80} value={Number(s.badgeRadius ?? 32)} onChange={(v) => updateBlockSettings(id, { badgeRadius: Number(v) })} output />
+            <RangeSlider label="Gap" min={0} max={28} value={Number(s.gap ?? 12)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
+            <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+            <RangeSlider label="Card Padding" min={8} max={40} value={Number(s.padding ?? 14)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
+            <RangeSlider label="Card Radius" min={0} max={40} value={Number(s.borderRadius ?? 14)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
           </BlockStack>
         )}
 
         {type === 'timer' && (
            <BlockStack gap="300">
               <TextField label="Remaining Text" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" />
-              <ColorField label="Pulse Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
-              <ColorField label="Text Color Override" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
-              <TextField label="Timer Format" value={s.timerFormat || "{countdown}"} onChange={(v) => updateBlockSettings(id, { timerFormat: v })} autoComplete="off" helpText="Placeholders: {countdown}" />
+              <ColorField label="Timer Background" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+              <ColorField label="Dot Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
+              <ColorField label="Text Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
+              <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+              <RangeSlider label="Dot Size" min={6} max={24} value={Number(s.dotSize ?? 9)} onChange={(v) => updateBlockSettings(id, { dotSize: Number(v) })} output />
+              <RangeSlider label="Text Size" min={10} max={24} value={Number(s.fontSize ?? 13)} onChange={(v) => updateBlockSettings(id, { fontSize: Number(v) })} output />
+              <Select label="Text Weight" options={[{label:'Normal',value:'400'},{label:'Medium',value:'500'},{label:'Bold',value:'700'}]} value={String(s.fontWeight || '500')} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
+              <RangeSlider label="Padding" min={4} max={32} value={Number(s.padding ?? 10)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
+              <RangeSlider label="Radius" min={0} max={40} value={Number(s.borderRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+              <RangeSlider label="Gap" min={0} max={24} value={Number(s.gap ?? 10)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
+              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
               <InlineStack align="space-between" blockAlign="center">
                  <Text variant="bodyMd" as="p">Pulse Animation</Text>
                  <Button variant="secondary" pressed={s.animate !== false} onClick={() => updateBlockSettings(id, { animate: s.animate === false })}>
@@ -540,7 +951,64 @@ export default function VisualBuilderStudio() {
               <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
                 {s.icon ? `Icon: ${s.icon}` : 'Select Icon'}
               </Button>
+              <ColorField label="Background Override" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+              <ColorField label="Text Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
+              <ColorField label="Icon Color" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
+              <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+              <RangeSlider label="Icon Size" min={12} max={40} value={Number(s.iconSize ?? 20)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+              <RangeSlider label="Text Size" min={10} max={24} value={Number(s.fontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { fontSize: Number(v) })} output />
+              <Select label="Text Weight" options={[{label:'Normal',value:'400'},{label:'Medium',value:'500'},{label:'Bold',value:'700'}]} value={String(s.fontWeight || '400')} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
+              <RangeSlider label="Padding" min={6} max={32} value={Number(s.padding ?? 12)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
+              <RangeSlider label="Radius" min={0} max={32} value={Number(s.borderRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+              <RangeSlider label="Gap" min={0} max={24} value={Number(s.gap ?? 12)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
+              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
            </BlockStack>
+        )}
+
+        {type === 'policy_accordion' && (
+          <BlockStack gap="300">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="bodyMd" as="p">Open first item</Text>
+              <Button variant="secondary" pressed={s.openFirst !== false} onClick={() => updateBlockSettings(id, { openFirst: s.openFirst === false })}>
+                {s.openFirst !== false ? "Enabled" : "Disabled"}
+              </Button>
+            </InlineStack>
+            <Divider />
+            {normalizePolicyItems(s).map((item, index, items) => (
+              <Card key={item.id} padding="300">
+                <BlockStack gap="200">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="bodySm" fontWeight="bold" as="p">Policy {index + 1}</Text>
+                    <InlineStack gap="100">
+                      <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => movePolicyItem(id, index, "up")} />
+                      <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === items.length - 1} onClick={() => movePolicyItem(id, index, "down")} />
+                      <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={items.length <= 1} onClick={() => removePolicyItem(id, item.id)} />
+                    </InlineStack>
+                  </InlineStack>
+                  <TextField label="Title" value={item.title} onChange={(v) => updatePolicyItem(id, item.id, { title: v })} autoComplete="off" />
+                  <TextField label="Body" value={item.body} onChange={(v) => updatePolicyItem(id, item.id, { body: v })} autoComplete="off" multiline={3} />
+                  <Button onClick={() => setIconPickerTarget({ blockId: id, field: `policyItem:${item.id}`, open: true })}>
+                    {item.icon ? `Icon: ${item.icon}` : "Pick Icon"}
+                  </Button>
+                  <ColorField label="Item Background" value={item.bgColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { bgColor: v })} />
+                  <ColorField label="Item Border" value={item.borderColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { borderColor: v })} />
+                  <ColorField label="Icon Color" value={item.iconColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { iconColor: v })} />
+                  <ColorField label="Title Color" value={item.titleColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { titleColor: v })} />
+                  <ColorField label="Body Color" value={item.bodyColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { bodyColor: v })} />
+                </BlockStack>
+              </Card>
+            ))}
+            <Button icon={PlusIcon} onClick={() => addPolicyItem(id)} disabled={normalizePolicyItems(s).length >= 5}>
+              Add policy item
+            </Button>
+            <RangeSlider label="Item Radius" min={0} max={32} value={Number(s.itemRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { itemRadius: Number(v) })} output />
+            <RangeSlider label="Item Padding" min={8} max={28} value={Number(s.itemPadding ?? 12)} onChange={(v) => updateBlockSettings(id, { itemPadding: Number(v) })} output />
+            <RangeSlider label="Icon Size" min={10} max={32} value={Number(s.iconSize ?? 18)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+            <RangeSlider label="Title Size" min={10} max={22} value={Number(s.titleFontSize ?? 13)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+            <RangeSlider label="Body Size" min={9} max={18} value={Number(s.bodyFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { bodyFontSize: Number(v) })} output />
+            <RangeSlider label="Item Gap" min={4} max={24} value={Number(s.itemGap ?? 8)} onChange={(v) => updateBlockSettings(id, { itemGap: Number(v) })} output />
+            <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+          </BlockStack>
         )}
 
         {type === 'dual_info' && (
@@ -551,6 +1019,11 @@ export default function VisualBuilderStudio() {
                     <TextField label="Title" value={s.leftTitle || ""} onChange={(v) => updateBlockSettings(id, { leftTitle: v })} autoComplete="off" />
                     <TextField label="Text" value={s.leftText || ""} onChange={(v) => updateBlockSettings(id, { leftText: v })} autoComplete="off" multiline={2} />
                     <Button onClick={() => setIconPickerTarget({ blockId: id, field: "leftIcon", open: true })}>Icon: {s.leftIcon || 'monitor'}</Button>
+                    <ColorField label="Card Background" value={s.leftBgColor || ""} onChange={(v) => updateBlockSettings(id, { leftBgColor: v })} />
+                    <ColorField label="Title Color" value={s.leftTitleColor || ""} onChange={(v) => updateBlockSettings(id, { leftTitleColor: v })} />
+                    <ColorField label="Text Color" value={s.leftTextColor || ""} onChange={(v) => updateBlockSettings(id, { leftTextColor: v })} />
+                    <ColorField label="Icon Color" value={s.leftIconColor || ""} onChange={(v) => updateBlockSettings(id, { leftIconColor: v })} />
+                    <ColorField label="Border Color" value={s.leftBorderColor || ""} onChange={(v) => updateBlockSettings(id, { leftBorderColor: v })} />
                  </BlockStack>
               </Card>
               <Card padding="300">
@@ -559,8 +1032,21 @@ export default function VisualBuilderStudio() {
                     <TextField label="Title" value={s.rightTitle || ""} onChange={(v) => updateBlockSettings(id, { rightTitle: v })} autoComplete="off" />
                     <TextField label="Text" value={s.rightText || ""} onChange={(v) => updateBlockSettings(id, { rightText: v })} autoComplete="off" multiline={2} />
                     <Button onClick={() => setIconPickerTarget({ blockId: id, field: "rightIcon", open: true })}>Icon: {s.rightIcon || 'store'}</Button>
+                    <ColorField label="Card Background" value={s.rightBgColor || ""} onChange={(v) => updateBlockSettings(id, { rightBgColor: v })} />
+                    <ColorField label="Title Color" value={s.rightTitleColor || ""} onChange={(v) => updateBlockSettings(id, { rightTitleColor: v })} />
+                    <ColorField label="Text Color" value={s.rightTextColor || ""} onChange={(v) => updateBlockSettings(id, { rightTextColor: v })} />
+                    <ColorField label="Icon Color" value={s.rightIconColor || ""} onChange={(v) => updateBlockSettings(id, { rightIconColor: v })} />
+                    <ColorField label="Border Color" value={s.rightBorderColor || ""} onChange={(v) => updateBlockSettings(id, { rightBorderColor: v })} />
                  </BlockStack>
               </Card>
+              <RangeSlider label="Card Radius" min={0} max={32} value={Number(s.cardRadius ?? 16)} onChange={(v) => updateBlockSettings(id, { cardRadius: Number(v) })} output />
+              <RangeSlider label="Card Padding" min={8} max={36} value={Number(s.cardPadding ?? 20)} onChange={(v) => updateBlockSettings(id, { cardPadding: Number(v) })} output />
+              <RangeSlider label="Icon Size" min={12} max={48} value={Number(s.iconSize ?? 28)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+              <RangeSlider label="Title Size" min={10} max={24} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+              <RangeSlider label="Text Size" min={9} max={20} value={Number(s.textFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { textFontSize: Number(v) })} output />
+              <RangeSlider label="Column Gap" min={4} max={32} value={Number(s.columnGap ?? 16)} onChange={(v) => updateBlockSettings(id, { columnGap: Number(v) })} output />
+              <RangeSlider label="Card Gap" min={0} max={24} value={Number(s.cardGap ?? 8)} onChange={(v) => updateBlockSettings(id, { cardGap: Number(v) })} output />
+              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
            </BlockStack>
         )}
 
@@ -568,25 +1054,56 @@ export default function VisualBuilderStudio() {
            <BlockStack gap="300">
               <TextField label="Label" value={s.label || ""} onChange={(v) => updateBlockSettings(id, { label: v })} autoComplete="off" />
               <RangeSlider label="Progress Percentage" min={0} max={100} value={s.percentage || 75} onChange={(v) => updateBlockSettings(id, { percentage: v })} output />
-              <ColorField label="Bar Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
+              <ColorField label="Label Color" value={s.labelColor || ""} onChange={(v) => updateBlockSettings(id, { labelColor: v })} />
+              <ColorField label="Track Color" value={s.trackColor || ""} onChange={(v) => updateBlockSettings(id, { trackColor: v })} />
+              <ColorField label="Fill Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
+              <ColorField label="Track Border" value={s.trackBorderColor || ""} onChange={(v) => updateBlockSettings(id, { trackBorderColor: v })} />
+              <Select label="Fill Style" options={[{label:'Solid',value:'solid'},{label:'Gradient',value:'gradient'}]} value={s.fillStyle || 'solid'} onChange={(v) => updateBlockSettings(id, { fillStyle: v })} />
+              <ColorField label="Fill Gradient End" value={s.gradientEndColor || ""} onChange={(v) => updateBlockSettings(id, { gradientEndColor: v })} />
+              <RangeSlider label="Label Size" min={10} max={24} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
+              <RangeSlider label="Track Height" min={4} max={24} value={Number(s.height ?? 10)} onChange={(v) => updateBlockSettings(id, { height: Number(v) })} output />
+              <RangeSlider label="Track Radius" min={0} max={24} value={Number(s.radius ?? 20)} onChange={(v) => updateBlockSettings(id, { radius: Number(v) })} output />
+              <RangeSlider label="Track Border Width" min={0} max={8} value={Number(s.trackBorderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { trackBorderWidth: Number(v) })} output />
            </BlockStack>
         )}
 
         {type === 'trust_badges' && (
-           <BlockStack gap="300">
-              <Text variant="bodyMd" as="p">Badge Selection:</Text>
-              <InlineStack gap="200">
-                 {['shield', 'check', 'star', 'package', 'truck', 'gift'].map(b => (
-                    <div key={b} onClick={() => {
-                         const cur = s.badges || ['shield', 'check', 'star'];
-                         const next = cur.includes(b) ? cur.filter((x:any) => x !== b) : [...cur, b];
-                         updateBlockSettings(id, { badges: next });
-                    }} style={{ cursor: 'pointer' }}>
-                       <Badge tone={(s.badges || []).includes(b) ? 'success' : undefined}>{b}</Badge>
-                    </div>
-                 ))}
-              </InlineStack>
-           </BlockStack>
+          <BlockStack gap="300">
+            {normalizeTrustBadges(s).map((badge, index, badges) => (
+              <Card key={badge.id} padding="300">
+                <BlockStack gap="200">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="bodySm" fontWeight="bold" as="p">Badge {index + 1}</Text>
+                    <InlineStack gap="100">
+                      <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => moveTrustBadge(id, index, "up")} />
+                      <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === badges.length - 1} onClick={() => moveTrustBadge(id, index, "down")} />
+                      <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={badges.length <= 1} onClick={() => removeTrustBadge(id, badge.id)} />
+                    </InlineStack>
+                  </InlineStack>
+                  <TextField label="Label" value={badge.label} onChange={(v) => updateTrustBadge(id, badge.id, { label: v })} autoComplete="off" />
+                  <TextField label="Sub-text" value={badge.subText} onChange={(v) => updateTrustBadge(id, badge.id, { subText: v })} autoComplete="off" />
+                  <Button onClick={() => setIconPickerTarget({ blockId: id, field: `trustBadge:${badge.id}`, open: true })}>
+                    {badge.icon ? `Icon: ${badge.icon}` : "Pick Icon"}
+                  </Button>
+                  <ColorField label="Badge Background" value={badge.bgColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { bgColor: v })} />
+                  <ColorField label="Badge Border" value={badge.borderColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { borderColor: v })} />
+                  <ColorField label="Icon Color" value={badge.iconColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { iconColor: v })} />
+                  <ColorField label="Label Color" value={badge.labelColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { labelColor: v })} />
+                  <ColorField label="Sub-text Color" value={badge.subTextColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { subTextColor: v })} />
+                </BlockStack>
+              </Card>
+            ))}
+            <Button icon={PlusIcon} onClick={() => addTrustBadge(id)} disabled={normalizeTrustBadges(s).length >= 8}>
+              Add trust badge
+            </Button>
+            <RangeSlider label="Badge Icon Size" min={12} max={40} value={Number(s.iconSize ?? 24)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+            <RangeSlider label="Badge Padding" min={4} max={24} value={Number(s.itemPadding ?? 8)} onChange={(v) => updateBlockSettings(id, { itemPadding: Number(v) })} output />
+            <RangeSlider label="Badge Radius" min={0} max={80} value={Number(s.itemRadius ?? 32)} onChange={(v) => updateBlockSettings(id, { itemRadius: Number(v) })} output />
+            <RangeSlider label="Badge Gap" min={0} max={20} value={Number(s.itemGap ?? 8)} onChange={(v) => updateBlockSettings(id, { itemGap: Number(v) })} output />
+            <RangeSlider label="Label Size" min={10} max={22} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
+            <RangeSlider label="Sub-text Size" min={9} max={18} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
+            <RangeSlider label="Row Gap" min={0} max={28} value={Number(s.rowGap ?? 12)} onChange={(v) => updateBlockSettings(id, { rowGap: Number(v) })} output />
+          </BlockStack>
         )}
 
         {type === 'html' && (
@@ -600,6 +1117,12 @@ export default function VisualBuilderStudio() {
               <TextField label="Image URL" value={s.url || ""} onChange={(v) => updateBlockSettings(id, { url: v })} autoComplete="off" />
               <Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'},{label:'Right',value:'right'}]} value={s.align || 'center'} onChange={(v) => updateBlockSettings(id, { align: v })} />
               <TextField label="Height (px/auto)" value={s.height || 'auto'} onChange={(v) => updateBlockSettings(id, { height: v })} autoComplete="off" />
+              <TextField label="Width (px/%/auto)" value={s.width || 'auto'} onChange={(v) => updateBlockSettings(id, { width: v })} autoComplete="off" />
+              <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+              <RangeSlider label="Border Width" min={0} max={10} value={Number(s.borderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              <RangeSlider label="Image Radius" min={0} max={48} value={Number(s.borderRadius ?? 0)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+              <Select label="Object Fit" options={[{label:'Contain',value:'contain'},{label:'Cover',value:'cover'},{label:'Fill',value:'fill'}]} value={s.objectFit || 'contain'} onChange={(v) => updateBlockSettings(id, { objectFit: v })} />
+              <RangeSlider label="Opacity" min={20} max={100} value={Number(s.opacity ?? 100)} onChange={(v) => updateBlockSettings(id, { opacity: Number(v) })} output />
            </BlockStack>
         )}
 
@@ -617,10 +1140,146 @@ export default function VisualBuilderStudio() {
     );
   };
 
+  const renderAnimationPanel = () => {
+    const activeBlock = getActiveBlock();
+    if (!activeBlock) {
+      return (
+        <EmptyState
+          heading="No block selected"
+          image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+        >
+          <Text as="p">Select a layer first.</Text>
+        </EmptyState>
+      );
+    }
+
+    const { id, type, settings: s } = activeBlock;
+    const enabled = s.iconAnimation === "lordicon";
+    const enableLordicon = () => {
+      updateBlockSettings(id, {
+        iconAnimation: "lordicon",
+        lordiconPreset: s.lordiconPreset || "auto",
+        lordiconTrigger: s.lordiconTrigger || "loop-on-hover",
+        lordiconStroke: s.lordiconStroke || "regular",
+        lordiconSpeed: Number(s.lordiconSpeed ?? 1),
+        lordiconSize: Number(s.lordiconSize ?? s.iconSize ?? 32),
+        lordiconPrimaryColor: s.lordiconPrimaryColor || iconColor,
+        lordiconSecondaryColor: s.lordiconSecondaryColor || textColor,
+      });
+    };
+
+    return (
+      <BlockStack gap="400">
+        <InlineStack align="space-between" blockAlign="center">
+          <BlockStack gap="100">
+            <Text variant="bodySm" tone="subdued" as="p">SELECTED LAYER</Text>
+            <Text variant="headingMd" as="h3">{getBlockLabel(type)}</Text>
+          </BlockStack>
+          <Button
+            variant="secondary"
+            pressed={enabled}
+            onClick={() => enabled ? updateBlockSettings(id, { iconAnimation: "none" }) : enableLordicon()}
+          >
+            {enabled ? "Lordicon On" : "Enable Lordicon"}
+          </Button>
+        </InlineStack>
+
+        <Divider />
+
+        {enabled ? (
+          <BlockStack gap="300">
+            <Select
+              label="Lordicon Source"
+              options={lordiconPresetOptions}
+              value={s.lordiconPreset || "auto"}
+              onChange={(v) => updateBlockSettings(id, { lordiconPreset: v })}
+            />
+            {s.lordiconPreset === "custom" && (
+              <TextField
+                label="Lordicon JSON / LI URL"
+                value={s.lordiconUrl || ""}
+                onChange={(v) => updateBlockSettings(id, { lordiconUrl: v })}
+                autoComplete="off"
+                placeholder="https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li"
+                helpText="Allowed: media.lordicon.com wired .li or cdn.lordicon.com .json"
+              />
+            )}
+
+            <InlineStack gap="200">
+              <div style={{ flex: 1 }}>
+                <Select
+                  label="Trigger"
+                  options={lordiconTriggerOptions}
+                  value={s.lordiconTrigger || "loop-on-hover"}
+                  onChange={(v) => updateBlockSettings(id, { lordiconTrigger: v })}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Select
+                  label="Stroke"
+                  options={lordiconStrokeOptions}
+                  value={s.lordiconStroke || "regular"}
+                  onChange={(v) => updateBlockSettings(id, { lordiconStroke: v })}
+                />
+              </div>
+            </InlineStack>
+
+            <TextField
+              label="Animation State"
+              value={s.lordiconState || ""}
+              onChange={(v) => updateBlockSettings(id, { lordiconState: v })}
+              autoComplete="off"
+              placeholder="Optional, e.g. hover-pinch"
+            />
+
+            <RangeSlider
+              label="Animation Size"
+              min={12}
+              max={96}
+              value={Number(s.lordiconSize ?? s.iconSize ?? 32)}
+              onChange={(v) => updateBlockSettings(id, { lordiconSize: Number(v) })}
+              output
+            />
+            <RangeSlider
+              label="Playback Speed"
+              min={0.25}
+              max={3}
+              step={0.25}
+              value={Number(s.lordiconSpeed ?? 1)}
+              onChange={(v) => updateBlockSettings(id, { lordiconSpeed: Number(v) })}
+              output
+            />
+
+            <ColorField label="Primary Color" value={s.lordiconPrimaryColor || iconColor} onChange={(v) => updateBlockSettings(id, { lordiconPrimaryColor: v })} />
+            <ColorField label="Secondary Color" value={s.lordiconSecondaryColor || textColor} onChange={(v) => updateBlockSettings(id, { lordiconSecondaryColor: v })} />
+
+            <InlineStack align="space-between" blockAlign="center">
+              <Text variant="bodyMd" as="p">Keep static icon visible</Text>
+              <Button
+                variant="secondary"
+                pressed={s.lordiconKeepStatic === true}
+                onClick={() => updateBlockSettings(id, { lordiconKeepStatic: s.lordiconKeepStatic !== true })}
+              >
+                {s.lordiconKeepStatic === true ? "Enabled" : "Disabled"}
+              </Button>
+            </InlineStack>
+          </BlockStack>
+        ) : (
+          <Box padding="400" background="bg-fill-secondary" borderRadius="200">
+            <Text variant="bodySm" tone="subdued" alignment="center" as="p">
+              Lordicon is off for this component.
+            </Text>
+          </Box>
+        )}
+      </BlockStack>
+    );
+  };
+
   const tabs = [
     { id: 'layers', content: 'Layers', accessibilityLabel: 'Layers' },
     { id: 'style', content: 'Global Style', accessibilityLabel: 'Style' },
     { id: 'rules', content: 'Display Rules', accessibilityLabel: 'Rules' },
+    { id: 'animation', content: 'Animation', accessibilityLabel: 'Animation' },
   ];
 
   return (
@@ -690,7 +1349,7 @@ export default function VisualBuilderStudio() {
                         <Icon source={ProductIcon} tone={activeBlockId === b.id ? 'success' : 'subdued'} />
                         <div style={{ flex: 1 }}>
                           <Text variant="bodySm" fontWeight={activeBlockId === b.id ? 'bold' : 'regular'} as="p">
-                            {b.type.charAt(0).toUpperCase() + b.type.slice(1)}
+                            {getBlockLabel(b.type)}
                           </Text>
                         </div>
                         <div style={{ display: 'flex', gap: '4px' }}>
@@ -705,9 +1364,9 @@ export default function VisualBuilderStudio() {
                 <Divider />
                 <Text variant="bodySm" fontWeight="bold" tone="subdued" as="p">ADD COMPONENTS</Text>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                   {['header', 'steps', 'timer', 'banner', 'trust_badges', 'progress', 'html', 'image', 'spacer', 'divider', 'dual_info'].map(t => (
+                   {['header', 'promise_card', 'steps', 'timer', 'banner', 'trust_badges', 'policy_accordion', 'progress', 'image', 'spacer', 'divider', 'dual_info'].map(t => (
                      <Button key={t} onClick={() => addBlock(t)} icon={PlusIcon} textAlign="left">
-                        {t.replace('_',' ')}
+                        {getBlockLabel(t)}
                      </Button>
                    ))}
                 </div>
@@ -719,8 +1378,8 @@ export default function VisualBuilderStudio() {
                 <BlockStack gap="300">
                    <Text variant="bodySm" fontWeight="bold" tone="subdued" as="p">VISUAL PROPERTIES</Text>
                    <Select label="Widget Shadow" options={[{label:'None',value:'none'},{label:'Small',value:'sm'},{label:'Medium',value:'md'},{label:'Large',value:'lg'},{label:'Extra Large',value:'xl'}]} value={shadow} onChange={setShadow} />
-                   <RangeSlider label="Edge Rounding" min={0} max={40} value={borderRadius} onChange={setBorderRadius} output />
-                   <RangeSlider label="Container Padding" min={0} max={60} step={4} value={padding} onChange={setPadding} output />
+                   <RangeSlider label="Edge Rounding" min={0} max={40} value={borderRadius} onChange={(value) => setBorderRadius(Number(value))} output />
+                   <RangeSlider label="Container Padding" min={0} max={60} step={4} value={padding} onChange={(value) => setPadding(Number(value))} output />
                    <InlineStack align="space-between" blockAlign="center">
                       <Text variant="bodyMd" as="p">Glassmorphism Blur</Text>
                       <Button variant="secondary" pressed={glassmorphism} onClick={() => setGlassmorphism(!glassmorphism)}>
@@ -748,10 +1407,13 @@ export default function VisualBuilderStudio() {
                 </Box>
                 <BlockStack gap="300">
                    <TextField label="Target Countries (ISO Codes)" value={targetCountries.join(", ")} onChange={(v) => setTargetCountries(v.split(",").map(s => s.trim().toUpperCase()))} autoComplete="off" placeholder="US, VN, CA" helpText="Empty = All countries" />
+                   <TextField label="Target Product IDs" value={targetProducts.join(", ")} onChange={(v) => setTargetProducts(v.split(",").map(s => s.trim()))} autoComplete="off" placeholder="1234567890, gid://shopify/Product/1234567890" helpText="Optional. Product-specific widgets take priority over country and tag rules." />
                    <TextField label="Target Product Tags" value={targetTags.join(", ")} onChange={(v) => setTargetTags(v.split(",").map(s => s.trim()))} autoComplete="off" placeholder="VIP, New, Pre-order" helpText="Empty = All products" />
                 </BlockStack>
               </BlockStack>
             )}
+
+            {activeTab === 3 && renderAnimationPanel()}
           </div>
         </div>
 
@@ -801,7 +1463,15 @@ export default function VisualBuilderStudio() {
         onSelect={(icon: any) => {
            if (iconPickerTarget.blockId) {
              const field = iconPickerTarget.field || 'icon';
-             updateBlockSettings(iconPickerTarget.blockId, { [field]: icon });
+             if (field.startsWith("stepItem:")) {
+               updateStepItem(iconPickerTarget.blockId, field.slice("stepItem:".length), { icon });
+             } else if (field.startsWith("trustBadge:")) {
+               updateTrustBadge(iconPickerTarget.blockId, field.slice("trustBadge:".length), { icon });
+             } else if (field.startsWith("policyItem:")) {
+               updatePolicyItem(iconPickerTarget.blockId, field.slice("policyItem:".length), { icon });
+             } else {
+               updateBlockSettings(iconPickerTarget.blockId, { [field]: icon });
+             }
            }
            setIconPickerTarget({ open: false });
         }}

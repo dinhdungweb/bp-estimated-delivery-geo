@@ -1,95 +1,259 @@
-import React from "react";
+import {
+  buildFallbackBlocks,
+  normalizePolicyItems,
+  normalizeStepItems,
+  normalizeTrustBadges,
+} from "../lib/delivery";
+import type { WidgetSettingsProps } from "../lib/delivery";
+import {
+  PiAirplaneTiltDuotone,
+  PiCalendarBlankDuotone,
+  PiCheckCircleDuotone,
+  PiClockCountdownDuotone,
+  PiCubeDuotone,
+  PiHeartDuotone,
+  PiHouseLineDuotone,
+  PiMapPinDuotone,
+  PiMapTrifoldDuotone,
+  PiMonitorDuotone,
+  PiMopedDuotone,
+  PiPackageDuotone,
+  PiRocketLaunchDuotone,
+  PiShieldCheckDuotone,
+  PiShoppingBagDuotone,
+  PiShoppingCartDuotone,
+  PiSparkleDuotone,
+  PiStorefrontDuotone,
+  PiTagDuotone,
+  PiTruckDuotone,
+  PiWarehouseDuotone,
+} from "react-icons/pi";
+import type { IconType } from "react-icons";
+import { createElement, useEffect, useRef, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
 
-export type WidgetStyleId = "eco_delivery" | "urgent_pulse" | "express_alert" | "global_trust" | "orange_blitz" | "dark_glassmorphism" | "simple_timeline" | "boxed_cards_blue" | "estimate_shipping_period" | "minimal_cart_truck" | "dark_urgency" | "trust_info_list" | "vertical_yellow" | "vertical_orange" | "green_order_now" | "red_moment_meter" | "blue_gradient" | "blue_boxed_steps" | "yellow_progress" | "dual_cards" | "custom";
+export type {
+  BlockConfig,
+  BlockType,
+  WidgetSettingsProps,
+  WidgetStyleId,
+} from "../lib/delivery";
 
-export type BlockType = "header" | "steps" | "timer" | "divider" | "policy" | "spacer" | "banner" | "trust_badges" | "progress" | "html" | "image" | "dual_info";
+const hasTimelineConnector = (preset: string) => preset === "timeline_dots";
+const hasVerticalConnector = (preset: string) => preset === "vertical";
 
-export interface BlockConfig {
-  id: string;
-  type: BlockType;
-  settings: Record<string, any>;
-}
+const LORDICON_SCRIPT_ID = "bp-lordicon-player";
+const LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
+const LORDICON_PRESETS: Record<string, string> = {
+  cart: "https://media.lordicon.com/icons/wired/lineal/146-trolley.li",
+  bag: "https://media.lordicon.com/icons/wired/lineal/2870-shopping-bag.li",
+  package: "https://media.lordicon.com/icons/wired/lineal/108-box.li",
+  box: "https://media.lordicon.com/icons/wired/lineal/108-box.li",
+  truck: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
+  scooter: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
+  plane: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
+  warehouse: "https://media.lordicon.com/icons/wired/lineal/481-shop.li",
+  map_pin: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li",
+  route: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li",
+  home: "https://media.lordicon.com/icons/wired/lineal/63-home.li",
+  shield: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li",
+  check_badge: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li",
+  clock: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li",
+  calendar: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li",
+  rocket: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
+  heart: "https://media.lordicon.com/icons/wired/lineal/436-love-care.li",
+  store: "https://media.lordicon.com/icons/wired/lineal/481-shop.li",
+  monitor: "https://media.lordicon.com/icons/wired/lineal/1359-online-shopping.li",
+  tag: "https://media.lordicon.com/icons/wired/lineal/289-price-tag.li",
+  sparkles: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
+};
+const LORDICON_TRIGGER_VALUES = new Set(["in", "click", "hover", "loop", "loop-on-hover", "boomerang", "morph", "sequence"]);
+const LORDICON_STROKE_VALUES = new Set(["light", "regular", "bold"]);
+const LORDICON_URL_PATTERN = /^https:\/\/(?:media\.lordicon\.com\/icons\/wired\/(?:lineal|outline|flat|gradient)\/[a-z0-9-]+\.li|cdn\.lordicon\.com\/[a-z0-9-]+\.json)$/i;
 
-export interface WidgetSettingsProps {
-  style: WidgetStyleId;
-  customBlocks?: BlockConfig[];
-  blocks?: BlockConfig[];
-  headerText?: string;
-  subHeaderText?: string;
-  step1Label?: string;
-  step1SubText?: string;
-  step1Icon?: string;
-  step2Label?: string;
-  step2SubText?: string;
-  step2Icon?: string;
-  step3Label?: string;
-  step3SubText?: string;
-  step3Icon?: string;
-  textColor: string;
-  iconColor: string;
-  bgColor: string;
-  borderColor: string;
-  borderWidth?: number;
-  borderRadius: number;
-  shadow?: "none" | "sm" | "md" | "lg" | "xl" | "premium" | string;
-  glassmorphism?: boolean;
-  padding?: number;
-  bgGradient?: string;
-  showTimeline?: boolean;
-  policyText?: string;
-}
-
-// ─── High-Fidelity SVG Icons (Pixel-Perfect) ───────────────────────────────────
-export const IconList: Record<string, any> = {
-  bag: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><path d="M6 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8z" /><path d="M9 6c0-1.657 1.343-3 3-3s3 1.343 3 3" /><path d="M6 10h12" /><circle cx="9" cy="14" r="1.5" fill={c} /><circle cx="15" cy="14" r="1.5" fill={c} /></svg>
-  ),
-  truck: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" /><path d="M5 17h2.5" /><path d="M11.5 17h3.5" /><path d="M21 17h-1.5v-5a1 1 0 0 0-1-1H14" /><path d="M14 17h5l1.5-3.5V11H14V6a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v11h3" /></svg>
-  ),
-  truck_mini: ({ c, s = 16 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill={c}><path d="M19 10h-2V7c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v10h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-2zm-13 8c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm12 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z" /></svg>
-  ),
-  heart: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill={c}><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
-  ),
-  map_pin: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" fill={c} /></svg>
-  ),
-  package: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><path d="M12 3L4 8v8l8 5 8-5V8l-8-5z" /><path d="M4 8l8 5 8-5" /><path d="M12 21V13" /></svg>
-  ),
-  box: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>
-  ),
-  scooter: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><circle cx="6" cy="18" r="2" /><circle cx="18" cy="18" r="2" /><path d="M8 18h8" /><path d="M18 18h1c1.1 0 2-.9 2-2V7a2 2 0 0 0-2-2h-3" /><path d="M12 11h6V5h-6z" /><path d="M12 5V2" /><path d="M12 17V8c0-1.1-.9-2-2-2H2v3h6v8" /></svg>
-  ),
-  check_badge: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill={c} transform="scale(1.1)"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71L12 2z" /></svg>
-  ),
-  store: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><path d="M2.2 7.3h19.6l-1 4.4H3.2l-1-4.4z" /><path d="M5.5 11.7V21h13V11.7" /><path d="M10 21v-5h4v5" /></svg>
-  ),
-  monitor: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M12 16v4" /><path d="M8 20h8" /></svg>
-  ),
-  shield: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M12 8v4" /><path d="M12 16h.01" /></svg>
-  ),
-  rocket: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c} d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" /><path d="M9 12H4s.5-1 1-4c2 0 3 0 3 0" /><path d="M15 9V4s-1 .5-4 1c0 2 0 3 0 3" /></svg>
-  ),
-  clock: ({ c, s = 24 }: { c: string; s?: number }) => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" strokeWidth="1.6" stroke={c}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-  ),
+const loadLordiconScript = () => {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(LORDICON_SCRIPT_ID)) return;
+  const script = document.createElement("script");
+  script.id = LORDICON_SCRIPT_ID;
+  script.src = LORDICON_SCRIPT_SRC;
+  script.async = true;
+  document.head.appendChild(script);
 };
 
-const IconRenderer = ({ icon, color, size = 24 }: { icon?: string; color: string; size?: number }) => {
+const clampNumber = (value: unknown, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const cleanLordiconState = (value: unknown) => {
+  const state = String(value || "").trim();
+  return /^[a-z0-9_-]{1,48}$/i.test(state) ? state : "";
+};
+
+const safeLordiconUrl = (settings: Record<string, unknown> = {}, icon?: string) => {
+  if (settings.iconAnimation !== "lordicon") return "";
+  const customUrl = String(settings.lordiconUrl || "").trim();
+  if (LORDICON_URL_PATTERN.test(customUrl)) return customUrl;
+  const preset = String(settings.lordiconPreset || "auto");
+  if (preset !== "auto" && LORDICON_PRESETS[preset]) return LORDICON_PRESETS[preset];
+  const normalizedIcon = String(icon || "").replace(/^lucide:/, "").replace(/-/g, "_");
+  return LORDICON_PRESETS[normalizedIcon] || LORDICON_PRESETS.package;
+};
+
+const safeLordiconTrigger = (value: unknown) => {
+  const trigger = String(value || "loop-on-hover");
+  return LORDICON_TRIGGER_VALUES.has(trigger) ? trigger : "loop-on-hover";
+};
+
+const safeLordiconStroke = (value: unknown) => {
+  const stroke = String(value || "regular");
+  return LORDICON_STROKE_VALUES.has(stroke) ? stroke : "regular";
+};
+
+type WidgetIcon = ((props: { s?: number }) => ReactElement) & { displayName?: string };
+
+const phosphorIcon = (Icon: IconType): WidgetIcon => {
+  function PhosphorWidgetIcon({ s = 24 }: { s?: number }) {
+    return <Icon size={s} aria-hidden="true" focusable="false" />;
+  }
+
+  const namedIcon = Icon as IconType & { displayName?: string; name?: string };
+  PhosphorWidgetIcon.displayName = namedIcon.displayName || namedIcon.name || "PhosphorWidgetIcon";
+  return PhosphorWidgetIcon;
+};
+
+// Phosphor Duotone icon set. IDs stay backward-compatible with saved widgets.
+export const IconList: Record<string, WidgetIcon> = {
+  bag: phosphorIcon(PiShoppingBagDuotone),
+  cart: phosphorIcon(PiShoppingCartDuotone),
+  package: phosphorIcon(PiPackageDuotone),
+  box: phosphorIcon(PiCubeDuotone),
+  truck: phosphorIcon(PiTruckDuotone),
+  truck_mini: phosphorIcon(PiTruckDuotone),
+  scooter: phosphorIcon(PiMopedDuotone),
+  plane: phosphorIcon(PiAirplaneTiltDuotone),
+  warehouse: phosphorIcon(PiWarehouseDuotone),
+  map_pin: phosphorIcon(PiMapPinDuotone),
+  route: phosphorIcon(PiMapTrifoldDuotone),
+  home: phosphorIcon(PiHouseLineDuotone),
+  shield: phosphorIcon(PiShieldCheckDuotone),
+  check_badge: phosphorIcon(PiCheckCircleDuotone),
+  clock: phosphorIcon(PiClockCountdownDuotone),
+  calendar: phosphorIcon(PiCalendarBlankDuotone),
+  rocket: phosphorIcon(PiRocketLaunchDuotone),
+  heart: phosphorIcon(PiHeartDuotone),
+  store: phosphorIcon(PiStorefrontDuotone),
+  monitor: phosphorIcon(PiMonitorDuotone),
+  tag: phosphorIcon(PiTagDuotone),
+  sparkles: phosphorIcon(PiSparkleDuotone),
+};
+
+const LordiconLayer = ({
+  settings,
+  icon,
+  color,
+  size,
+  children,
+}: {
+  settings?: Record<string, unknown>;
+  icon?: string;
+  color: string;
+  size: number;
+  children: ReactNode;
+}) => {
+  const ref = useRef<HTMLElement | null>(null);
+  const [ready, setReady] = useState(false);
+  const src = safeLordiconUrl(settings, icon);
+
+  useEffect(() => {
+    if (!src) return;
+    loadLordiconScript();
+  }, [src]);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return undefined;
+    const handleReady = () => setReady(true);
+    node.addEventListener("ready", handleReady);
+    return () => node.removeEventListener("ready", handleReady);
+  }, [src]);
+
+  if (!src) return <>{children}</>;
+
+  const primary = String(settings?.lordiconPrimaryColor || color || "#3b82f6");
+  const secondary = String(settings?.lordiconSecondaryColor || primary);
+  const trigger = safeLordiconTrigger(settings?.lordiconTrigger);
+  const stroke = safeLordiconStroke(settings?.lordiconStroke);
+  const state = cleanLordiconState(settings?.lordiconState);
+  const speed = clampNumber(settings?.lordiconSpeed, 1, 0.25, 3);
+  const displaySize = clampNumber(settings?.lordiconSize, size, 8, 128);
+  const keepStatic = settings?.lordiconKeepStatic === true;
+
+  const lordiconProps: Record<string, unknown> = {
+    ref,
+    src,
+    trigger,
+    stroke,
+    speed,
+    loading: "lazy",
+    colors: `primary:${primary},secondary:${secondary}`,
+    className: "bp-lordicon",
+    style: { width: `${displaySize}px`, height: `${displaySize}px` },
+  };
+  if (state) lordiconProps.state = state;
+
+  return (
+    <span
+      className={`bp-icon-stack ${ready ? "bp-lordicon-ready" : ""} ${keepStatic ? "bp-icon-keep-static" : ""}`}
+      style={{ width: displaySize, height: displaySize }}
+    >
+      <span className="bp-icon-static">{children}</span>
+      {createElement("lord-icon" as any, lordiconProps)}
+    </span>
+  );
+};
+
+const IconRenderer = ({
+  icon,
+  color,
+  size = 24,
+  animation,
+}: {
+  icon?: string;
+  color: string;
+  size?: number;
+  animation?: Record<string, unknown>;
+}) => {
   if (!icon) return null;
-  const iconName = icon.startsWith("lucide:") ? icon.replace("lucide:", "").replace(/-/g, "_") : icon;
-  const SelectedIcon = IconList[iconName] || IconList["package"];
-  return <SelectedIcon c={color} s={size} />;
+
+  let staticIcon: ReactNode;
+  if (icon.startsWith("/icons/") || icon.includes(".png")) {
+    const path = icon.startsWith("/") ? icon : `/icons/${icon}`;
+    staticIcon = (
+      <img
+        src={path}
+        alt=""
+        style={{
+          width: size,
+          height: size,
+          objectFit: "contain",
+          filter: icon.includes("colorable") ? `drop-shadow(0 0 0 ${color})` : "none",
+        }}
+      />
+    );
+  } else {
+    const iconName = icon.startsWith("lucide:") ? icon.replace("lucide:", "").replace(/-/g, "_") : icon;
+    const SelectedIcon = IconList[iconName] || IconList["package"];
+    staticIcon = <div style={{ color }}><SelectedIcon s={size} /></div>;
+  }
+
+  return (
+    <LordiconLayer settings={animation} icon={icon} color={color} size={size}>
+      {staticIcon}
+    </LordiconLayer>
+  );
 };
 
 const PREVIEW_DATA = {
@@ -100,22 +264,18 @@ const PREVIEW_DATA = {
   countdown: "02:14:59",
 };
 
-const shadowStyles: Record<string, string> = {
-  none: "none",
-  sm: "0 1px 3px rgba(0,0,0,0.1)",
-  md: "0 4px 6px rgba(0,0,0,0.1)",
-  lg: "0 10px 15px rgba(0,0,0,0.1)",
-  xl: "0 20px 25px rgba(0,0,0,0.1)",
-  premium: "0 15px 35px rgba(0,0,0,0.15)"
-};
-
 export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsProps }) {
   const {
     customBlocks, blocks: legacyBlocks, textColor, iconColor, bgColor, borderColor, borderRadius,
     shadow, glassmorphism, padding = 16, bgGradient
   } = settings;
 
-  const blocks = customBlocks || legacyBlocks || [];
+  const blocks =
+    customBlocks?.length
+      ? customBlocks
+      : legacyBlocks?.length
+        ? legacyBlocks
+        : buildFallbackBlocks(settings);
   const { orderDate, shipDate, minDate, maxDate, countdown } = PREVIEW_DATA;
 
   const formatText = (text?: string) => {
@@ -127,7 +287,41 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       .replace(/{max_date}/g, maxDate)
       .replace(/{countdown}/g, countdown)
       .replace(/{COUNTRY_NAME}/g, "Vietnam")
-      .replace(/{COUNTRY_FLAG}/g, "🇻🇳");
+      .replace(/{COUNTRY_FLAG}/g, "VN");
+  };
+
+  const blockIconColor = (s: any) => s.iconColor || s.blockIconColor || iconColor;
+
+  const blockWrapperStyle = (s: any) => {
+    const style: Record<string, string | number> = {};
+    if (s.blockBgColor) style.background = s.blockBgColor;
+    if (s.blockTextColor) style.color = s.blockTextColor;
+    if (s.blockAlign && s.blockAlign !== "inherit") style.textAlign = s.blockAlign;
+    if (s.blockPadding !== undefined) style.padding = `${Number(s.blockPadding) || 0}px`;
+    if (s.blockRadius !== undefined) {
+      style.borderRadius = `${Number(s.blockRadius) || 0}px`;
+      style.overflow = "hidden";
+    }
+    if (s.blockMarginTop !== undefined) style.marginTop = `${Number(s.blockMarginTop) || 0}px`;
+    if (s.blockMarginBottom !== undefined) style.marginBottom = `${Number(s.blockMarginBottom) || 0}px`;
+    if (s.blockOpacity !== undefined) style.opacity = Math.min(100, Math.max(20, Number(s.blockOpacity) || 100)) / 100;
+    const borderWidth = Number(s.blockBorderWidth || 0);
+    if (borderWidth > 0 || s.blockBorderColor) {
+      style.border = `${borderWidth || 1}px solid ${s.blockBorderColor || borderColor}`;
+    }
+    if (s.blockShadow === "soft") style.boxShadow = "var(--bp-shadow-soft)";
+    if (s.blockShadow === "deep") style.boxShadow = "var(--bp-shadow-deep)";
+    if (s.blockShadow === "glow") style.boxShadow = "var(--bp-shadow-glow)";
+    return style;
+  };
+
+  const wrapBlock = (block: any, content: any) => {
+    if (!content) return null;
+    return (
+      <div key={block.id} className="bp-block" style={blockWrapperStyle(block.settings) as any}>
+        {content}
+      </div>
+    );
   };
 
   const render_header = (s: any) => {
@@ -143,37 +337,42 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
         flexDirection: isHorizontal ? 'row' : 'column',
         alignItems: s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center',
         padding: s.padding !== undefined ? `${s.padding}px` : '',
+        gap: s.gap !== undefined ? `${s.gap}px` : undefined,
         '--bp-size': `${s.iconSize || 24}px`
       } as any}>
-        {(s.iconPosition === 'top' || s.iconPosition === 'left') && s.icon && <IconRenderer icon={s.icon} color="inherit" size={s.iconSize || 24} />}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: s.align || 'center' }}>
-           <div className="bp-text-label" style={{ fontSize: s.fontSize === 'sm' ? '14px' : s.fontSize === 'lg' ? '20px' : 'inherit' }}>{formatText(s.text)}</div>
-           {s.subText && <div className="bp-text-sub">{formatText(s.subText)}</div>}
+        {(s.iconPosition === 'top' || s.iconPosition === 'left') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s.textGap !== undefined ? `${s.textGap}px` : '2px', textAlign: s.align || 'center' }}>
+           <div className="bp-text-label" style={{
+             color: s.textColor || undefined,
+             fontSize: s.titleFontSize !== undefined ? `${s.titleFontSize}px` : s.fontSize === 'sm' ? '14px' : s.fontSize === 'lg' ? '20px' : 'inherit',
+             fontWeight: s.fontWeight || undefined,
+           }}>{formatText(s.text)}</div>
+           {s.subText && <div className="bp-text-sub" style={{ color: s.subTextColor || undefined, fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(s.subText)}</div>}
         </div>
-        {(s.iconPosition === 'bottom' || s.iconPosition === 'right') && s.icon && <IconRenderer icon={s.icon} color="inherit" size={s.iconSize || 24} />}
+        {(s.iconPosition === 'bottom' || s.iconPosition === 'right') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
       </div>
     );
   };
 
   const render_steps = (s: any) => {
     const preset = s.preset || 'horizontal';
-    const items = [
-      { label: s.step1Label || "Order", sub: s.step1SubText || orderDate, icon: s.step1Icon || "bag" },
-      { label: s.step2Label || "Shipped", sub: s.step2SubText || shipDate, icon: s.step2Icon || "truck" },
-      { label: s.step3Label || "Delivery", sub: s.step3SubText || maxDate, icon: s.step3Icon || "map_pin" },
-    ];
+    const items = normalizeStepItems(s);
+    const accent = blockIconColor(s);
 
     const presetClass = `bp-steps-${preset.replace('_', '-')}`;
     
     return (
-      <div key={s.id} className={`bp-steps ${presetClass}`} style={{ 
+      <div key={s.id} className={`bp-steps ${presetClass}`} data-count={items.length} style={{ 
         '--bp-size': `${s.iconSize || 24}px`,
         '--bp-gap': `${s.itemGap || 16}px`,
       } as any}>
         {items.map((item, i) => {
           const isFirst = i === 0;
           const isLast = i === items.length - 1;
-          const stepBg = s[`step${i+1}Bg`];
+          const dotBg = item.dotColor || (isFirst ? accent : '#fff');
+          const stepIconColor = item.iconColor || (isFirst ? '#fff' : accent);
+          const usesItemSurface = ['boxed_cards', 'boxed_steps', 'split_segments', 'thick', 'chevron'].includes(preset);
+          const stepBg = usesItemSurface ? item.bgColor : undefined;
           
           let itemClass = 'bp-timeline-item';
           if (preset === 'vertical') itemClass = 'bp-vertical-item';
@@ -181,23 +380,29 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           else if (preset === 'split_segments' || preset === 'thick' || preset === 'chevron') itemClass = 'bp-segment';
 
           const hasItemBorder = (preset === 'boxed_cards' || preset === 'boxed_steps' || preset === 'split_segments');
+          const dotBorderColor = usesItemSurface ? (item.borderColor || dotBg) : dotBg;
 
           return (
-            <div key={i} className={itemClass} style={{
+            <div key={item.id || i} className={itemClass} style={{
               background: stepBg,
+              padding: s.padding !== undefined ? `${s.padding}px` : undefined,
               borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
-              border: (s.borderWidth && hasItemBorder) ? `${s.borderWidth}px solid ${isFirst ? iconColor : '#eee'}` : undefined
+              border: (s.borderWidth && hasItemBorder) ? `${s.borderWidth}px solid ${item.borderColor || (isFirst ? accent : '#eee')}` : undefined
             }}>
-              {!isLast && (preset === 'timeline_dots' || preset === 'thick') && <div className="bp-timeline-connector" style={{ borderTopStyle: s.connectorStyle || 'dashed', borderTopColor: iconColor } as any} />}
-              {!isLast && preset === 'vertical' && <div className="bp-vertical-connector" style={{ borderLeftStyle: s.connectorStyle || 'dashed', borderLeftColor: iconColor } as any} />}
+              {!isLast && hasTimelineConnector(preset) && <div className="bp-timeline-connector" style={{ borderTopStyle: s.connectorStyle || 'dashed', borderTopColor: accent } as any} />}
+              {!isLast && hasVerticalConnector(preset) && <div className="bp-vertical-connector" style={{ borderLeftStyle: s.connectorStyle || 'dashed', borderLeftColor: accent } as any} />}
               
-              <div className="bp-timeline-dot" style={{ background: isFirst ? iconColor : '#fff', borderColor: isFirst ? iconColor : '#eee' }}>
-                <IconRenderer icon={item.icon} color={isFirst ? '#fff' : iconColor} size={s.iconSize || (preset === 'timeline_dots' ? 16 : 22)} />
+              <div className="bp-timeline-dot" style={{
+                background: dotBg,
+                borderColor: dotBorderColor,
+                borderWidth: s.dotBorderWidth !== undefined ? `${s.dotBorderWidth}px` : undefined,
+              }}>
+                <IconRenderer icon={item.icon} color={stepIconColor} size={s.iconSize || (preset === 'timeline_dots' ? 16 : 22)} animation={s} />
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: preset === 'vertical' ? 'left' : 'center' }}>
-                <div className="bp-text-label">{formatText(item.label)}</div>
-                <div className="bp-text-sub">{formatText(item.sub)}</div>
+                <div className="bp-text-label" style={{ color: item.labelColor || undefined, fontSize: s.labelFontSize !== undefined ? `${s.labelFontSize}px` : undefined }}>{formatText(item.label)}</div>
+                <div className="bp-text-sub" style={{ color: item.subTextColor || undefined, fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(item.subText)}</div>
               </div>
             </div>
           );
@@ -210,11 +415,20 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
     <div key={s.id} className="bp-timer" style={{
       background: s.bgColor || 'rgba(0,0,0,0.03)',
       color: s.textColor || 'inherit',
-      '--bp-ic': s.color || iconColor
+      border: Number(s.borderWidth || 0) > 0 ? `${s.borderWidth}px solid ${s.borderColor || borderColor}` : undefined,
+      borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
+      padding: s.padding !== undefined ? `${s.padding}px ${Math.round(Number(s.padding) * 1.2)}px` : undefined,
+      fontSize: s.fontSize !== undefined ? `${s.fontSize}px` : undefined,
+      gap: s.gap !== undefined ? `${s.gap}px` : undefined,
+      '--bp-ic': s.color || s.blockIconColor || iconColor
     } as any}>
-      <div className="bp-timer-dot" />
-      <div className="bp-text-label" style={{ fontWeight: '500' }}>
-        {formatText(s.text)}
+      <div className="bp-timer-dot" style={{
+        width: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
+        height: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
+        flexBasis: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
+      }} />
+      <div className="bp-text-label" style={{ fontWeight: s.fontWeight || '500' }}>
+        {formatText(s.text ?? s.timerFormat ?? "Order in {countdown}")}
       </div>
     </div>
   );
@@ -226,56 +440,188 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
     if (s.type === 'error') { bg = '#fee2e2'; bc = '#fca5a5'; }
     return (
       <div key={s.id} className="bp-banner" style={{
-        backgroundColor: s.styleType === 'outline' ? 'transparent' : bg,
-        borderColor: bc,
+        backgroundColor: s.bgColor || (s.styleType === 'outline' ? 'transparent' : bg),
+        borderColor: s.borderColor || bc,
+        borderWidth: s.borderWidth !== undefined ? `${s.borderWidth}px` : undefined,
+        borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
+        padding: s.padding !== undefined ? `${s.padding}px ${Math.round(Number(s.padding) * 1.33)}px` : undefined,
+        gap: s.gap !== undefined ? `${s.gap}px` : undefined,
+        fontSize: s.fontSize !== undefined ? `${s.fontSize}px` : undefined,
+        fontWeight: s.fontWeight || undefined,
         textAlign: s.align || 'left',
         color: s.textColor || 'inherit'
       }}>
-        {s.icon && <IconRenderer icon={s.icon} color={iconColor} size={20} />}
+        {s.icon && <IconRenderer icon={s.icon} color={blockIconColor(s)} size={s.iconSize || 20} animation={s} />}
         <div style={{ flex: 1 }}>{formatText(s.text)}</div>
       </div>
     );
   };
 
+  const render_promise_card = (s: any) => {
+    const tone = ["success", "info", "warning", "premium"].includes(s.tone) ? s.tone : "success";
+
+    return (
+      <div
+        key={s.id}
+        className={`bp-promise-card bp-promise-${tone}`}
+        style={{
+          background: s.bgColor || undefined,
+          borderColor: s.borderColor || undefined,
+          color: s.textColor || undefined,
+          textAlign: s.align || "left",
+          padding: s.padding !== undefined ? `${s.padding}px` : undefined,
+          borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
+          borderWidth: s.borderWidth !== undefined ? `${s.borderWidth}px` : undefined,
+          gap: s.gap !== undefined ? `${s.gap}px` : undefined,
+        }}
+      >
+        <div className="bp-promise-icon" style={{
+          background: s.iconBgColor || undefined,
+          width: s.iconBoxSize !== undefined ? `${s.iconBoxSize}px` : undefined,
+          height: s.iconBoxSize !== undefined ? `${s.iconBoxSize}px` : undefined,
+          flexBasis: s.iconBoxSize !== undefined ? `${s.iconBoxSize}px` : undefined,
+          borderRadius: s.iconBoxRadius !== undefined ? `${s.iconBoxRadius}px` : undefined,
+        }}>
+          <IconRenderer icon={s.icon || "truck"} color={blockIconColor(s)} size={s.iconSize || 24} animation={s} />
+        </div>
+        <div className="bp-promise-body">
+          <div className="bp-text-label" style={{ color: s.titleColor || s.textColor || undefined, fontSize: s.titleFontSize !== undefined ? `${s.titleFontSize}px` : undefined }}>{formatText(s.title || "Get it by {max_date}")}</div>
+          {s.subtitle && <div className="bp-text-sub" style={{ color: s.subtitleColor || undefined, fontSize: s.subtitleFontSize !== undefined ? `${s.subtitleFontSize}px` : undefined }}>{formatText(s.subtitle)}</div>}
+        </div>
+        {s.badgeText && <div className="bp-promise-badge" style={{
+          background: s.badgeBgColor || undefined,
+          color: s.badgeTextColor || undefined,
+          fontSize: s.badgeFontSize !== undefined ? `${s.badgeFontSize}px` : undefined,
+          borderRadius: s.badgeRadius !== undefined ? `${s.badgeRadius}px` : undefined,
+        }}>{formatText(s.badgeText)}</div>}
+      </div>
+    );
+  };
+
+  const render_policy_accordion = (s: any) => (
+    <div key={s.id} className="bp-policy-list" style={{ gap: s.itemGap !== undefined ? `${s.itemGap}px` : undefined }}>
+      {normalizePolicyItems(s).map((item, index) => (
+        <details key={item.id} className="bp-policy-item" open={s.openFirst !== false && index === 0} style={{
+          background: item.bgColor || undefined,
+          borderColor: item.borderColor || undefined,
+          borderWidth: s.borderWidth !== undefined ? `${s.borderWidth}px` : undefined,
+          borderRadius: s.itemRadius !== undefined ? `${s.itemRadius}px` : undefined,
+        }}>
+          <summary className="bp-policy-summary" style={{ padding: s.itemPadding !== undefined ? `${s.itemPadding}px ${s.itemPadding + 2}px` : undefined }}>
+            <IconRenderer icon={item.icon || "shield"} color={item.iconColor || blockIconColor(s)} size={s.iconSize || 18} animation={s} />
+            <span style={{ color: item.titleColor || undefined, fontSize: s.titleFontSize !== undefined ? `${s.titleFontSize}px` : undefined }}>{formatText(item.title)}</span>
+          </summary>
+          <div className="bp-policy-body" style={{ color: item.bodyColor || undefined, fontSize: s.bodyFontSize !== undefined ? `${s.bodyFontSize}px` : undefined }}>{formatText(item.body)}</div>
+        </details>
+      ))}
+    </div>
+  );
+
   const render_custom_block = (block: any) => {
+    let content = null;
     switch (block.type) {
-      case 'header': return render_header(block.settings);
-      case 'steps': return render_steps(block.settings);
-      case 'timer': return render_timer(block.settings);
-      case 'banner': return render_banner(block.settings);
-      case 'dual_info': return (
-        <div key={block.id} className="bp-dual-info">
-          <div className="bp-dual-card">
-            <IconRenderer icon={block.settings.leftIcon || "monitor"} color={iconColor} size={28} />
-            <div className="bp-text-label">{formatText(block.settings.leftTitle || "Online")}</div>
-            <div className="bp-text-sub">{formatText(block.settings.leftText)}</div>
+      case 'header': content = render_header(block.settings); break;
+      case 'steps': content = render_steps(block.settings); break;
+      case 'promise_card': content = render_promise_card(block.settings); break;
+      case 'timer': content = render_timer(block.settings); break;
+      case 'banner': content = render_banner(block.settings); break;
+      case 'policy_accordion': content = render_policy_accordion(block.settings); break;
+      case 'dual_info': content = (
+        <div key={block.id} className="bp-dual-info" style={{ gap: block.settings.columnGap !== undefined ? `${block.settings.columnGap}px` : undefined }}>
+          <div className="bp-dual-card" style={{
+            background: block.settings.leftBgColor || undefined,
+            borderColor: block.settings.leftBorderColor || undefined,
+            borderWidth: block.settings.borderWidth !== undefined ? `${block.settings.borderWidth}px` : undefined,
+            borderRadius: block.settings.cardRadius !== undefined ? `${block.settings.cardRadius}px` : undefined,
+            padding: block.settings.cardPadding !== undefined ? `${block.settings.cardPadding}px` : undefined,
+            gap: block.settings.cardGap !== undefined ? `${block.settings.cardGap}px` : undefined,
+          }}>
+            <IconRenderer icon={block.settings.leftIcon || "monitor"} color={block.settings.leftIconColor || blockIconColor(block.settings)} size={block.settings.iconSize || 28} animation={block.settings} />
+            <div className="bp-text-label" style={{ color: block.settings.leftTitleColor || undefined, fontSize: block.settings.titleFontSize !== undefined ? `${block.settings.titleFontSize}px` : undefined }}>{formatText(block.settings.leftTitle || "Online")}</div>
+            <div className="bp-text-sub" style={{ color: block.settings.leftTextColor || undefined, fontSize: block.settings.textFontSize !== undefined ? `${block.settings.textFontSize}px` : undefined }}>{formatText(block.settings.leftText)}</div>
           </div>
-          <div className="bp-dual-card">
-            <IconRenderer icon={block.settings.rightIcon || "store"} color={iconColor} size={28} />
-            <div className="bp-text-label">{formatText(block.settings.rightTitle || "In Store")}</div>
-            <div className="bp-text-sub">{formatText(block.settings.rightText)}</div>
+          <div className="bp-dual-card" style={{
+            background: block.settings.rightBgColor || undefined,
+            borderColor: block.settings.rightBorderColor || undefined,
+            borderWidth: block.settings.borderWidth !== undefined ? `${block.settings.borderWidth}px` : undefined,
+            borderRadius: block.settings.cardRadius !== undefined ? `${block.settings.cardRadius}px` : undefined,
+            padding: block.settings.cardPadding !== undefined ? `${block.settings.cardPadding}px` : undefined,
+            gap: block.settings.cardGap !== undefined ? `${block.settings.cardGap}px` : undefined,
+          }}>
+            <IconRenderer icon={block.settings.rightIcon || "store"} color={block.settings.rightIconColor || blockIconColor(block.settings)} size={block.settings.iconSize || 28} animation={block.settings} />
+            <div className="bp-text-label" style={{ color: block.settings.rightTitleColor || undefined, fontSize: block.settings.titleFontSize !== undefined ? `${block.settings.titleFontSize}px` : undefined }}>{formatText(block.settings.rightTitle || "In Store")}</div>
+            <div className="bp-text-sub" style={{ color: block.settings.rightTextColor || undefined, fontSize: block.settings.textFontSize !== undefined ? `${block.settings.textFontSize}px` : undefined }}>{formatText(block.settings.rightText)}</div>
           </div>
         </div>
-      );
-      case 'divider': return <div key={block.id} style={{ height: block.settings.height || 1, background: block.settings.color || borderColor, margin: '8px 0' }} />;
-      case 'spacer': return <div key={block.id} style={{ height: block.settings.height || 16 }} />;
-      case 'progress': return (
+      ); break;
+      case 'divider': content = <div key={block.id} style={{ height: block.settings.height || 1, background: block.settings.color || borderColor, margin: '8px 0' }} />; break;
+      case 'spacer': content = <div key={block.id} style={{ height: block.settings.height || 16 }} />; break;
+      case 'progress': content = (
         <div key={block.id} style={{ padding: '8px 0' }}>
-          <div className="bp-text-label" style={{ marginBottom: '6px' }}>{formatText(block.settings.label)}</div>
-          <div className="bp-progress-bar">
-            <div className="bp-progress-fill" style={{ width: `${block.settings.percentage || 75}%`, background: block.settings.color || iconColor }} />
+          <div className="bp-text-label" style={{ marginBottom: '6px', color: block.settings.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? `${block.settings.labelFontSize}px` : undefined }}>{formatText(block.settings.label)}</div>
+          <div className="bp-progress-bar" style={{
+            background: block.settings.trackColor || undefined,
+            border: (block.settings.trackBorderWidth || block.settings.trackBorderColor) ? `${block.settings.trackBorderWidth || 1}px solid ${block.settings.trackBorderColor || borderColor}` : undefined,
+            height: block.settings.height !== undefined ? `${block.settings.height}px` : undefined,
+            borderRadius: block.settings.radius !== undefined ? `${block.settings.radius}px` : undefined,
+          }}>
+            <div className="bp-progress-fill" style={{
+              width: `${block.settings.percentage || 75}%`,
+              background: block.settings.fillStyle === 'gradient'
+                ? `linear-gradient(90deg, ${block.settings.color || iconColor}, ${block.settings.gradientEndColor || '#818cf8'})`
+                : block.settings.color || block.settings.blockIconColor || iconColor,
+              borderRadius: block.settings.radius !== undefined ? `${block.settings.radius}px` : undefined,
+            }} />
           </div>
         </div>
-      );
-      case 'trust_badges': return (
-        <div key={block.id} className="bp-trust-row">
-          {(block.settings.badges || ['check_badge', 'shield']).map((b: any, i: number) => (
-            <div key={i} title={b}><IconRenderer icon={b} color={iconColor} size={24} /></div>
+      ); break;
+      case 'trust_badges': content = (
+        <div key={block.id} className="bp-trust-row" style={{ gap: block.settings.rowGap !== undefined ? `${block.settings.rowGap}px` : undefined }}>
+          {normalizeTrustBadges(block.settings).map((badge) => (
+            <div key={badge.id} className="bp-trust-item" title={badge.label || badge.icon} style={{
+              background: badge.bgColor || undefined,
+              border: badge.borderColor ? `1px solid ${badge.borderColor}` : undefined,
+              padding: block.settings.itemPadding !== undefined ? `${block.settings.itemPadding}px ${Math.round(Number(block.settings.itemPadding) * 1.25)}px` : undefined,
+              borderRadius: block.settings.itemRadius !== undefined ? `${block.settings.itemRadius}px` : undefined,
+              gap: block.settings.itemGap !== undefined ? `${block.settings.itemGap}px` : undefined,
+            }}>
+              <IconRenderer icon={badge.icon} color={badge.iconColor || blockIconColor(block.settings)} size={block.settings.iconSize || 24} animation={block.settings} />
+              {(badge.label || badge.subText) && (
+                <span className="bp-trust-copy">
+                  {badge.label && <span className="bp-text-label" style={{ color: badge.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? `${block.settings.labelFontSize}px` : undefined }}>{formatText(badge.label)}</span>}
+                  {badge.subText && <span className="bp-text-sub" style={{ color: badge.subTextColor || undefined, fontSize: block.settings.subTextFontSize !== undefined ? `${block.settings.subTextFontSize}px` : undefined }}>{formatText(badge.subText)}</span>}
+                </span>
+              )}
+            </div>
           ))}
         </div>
-      );
-      default: return null;
+      ); break;
+      case 'image': content = block.settings.url ? (
+        <div key={block.id} style={{ textAlign: block.settings.align || "center" }}>
+          <img
+            src={String(block.settings.url)}
+            alt=""
+            style={{
+              display: "inline-block",
+              maxWidth: "100%",
+              width: String(block.settings.width || "auto"),
+              height: String(block.settings.height || "auto"),
+              objectFit: block.settings.objectFit || "contain",
+              borderRadius: block.settings.borderRadius !== undefined ? `${block.settings.borderRadius}px` : undefined,
+              border: block.settings.borderWidth ? `${block.settings.borderWidth}px solid ${block.settings.borderColor || borderColor}` : undefined,
+              opacity: block.settings.opacity !== undefined ? Number(block.settings.opacity) / 100 : undefined,
+            }}
+          />
+        </div>
+      ) : null; break;
+      case 'html': content = (
+        <pre key={block.id} className="bp-text-sub" style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+          {String(block.settings.code || "")}
+        </pre>
+      ); break;
+      default: content = null;
     }
+    return wrapBlock(block, content);
   };
 
   return (

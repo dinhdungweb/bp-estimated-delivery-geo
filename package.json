@@ -2,7 +2,7 @@
   "name": "bp-estimated-delivery-geo",
   "private": true,
   "scripts": {
-    "css:sync": "node -e \"const fs = require('fs'); const css = fs.readFileSync('app/styles/bp-delivery.css'); fs.writeFileSync('extensions/bp-estimated-delivery/assets/bp-delivery.css', css); fs.writeFileSync('.shopify/dev-bundle/2261960d-f979-e351-a973-0f394357b417500e3deb/assets/bp-delivery.css', css);\"",
+    "css:sync": "node -e \"const fs = require('fs'); const css = fs.readFileSync('app/styles/bp-delivery.css'); fs.writeFileSync('extensions/bp-estimated-delivery/assets/bp-delivery.css', css);\"",
     "build": "npm run css:sync && react-router build",
     "dev": "npm run css:sync && shopify app dev",
     "config:link": "shopify app config link",
@@ -28,7 +28,7 @@
     "node": ">=20.19 <22 || >=22.12"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "6.19.3",
     "@react-router/dev": "^7.12.0",
     "@react-router/fs-routes": "^7.12.0",
     "@react-router/node": "^7.12.0",
@@ -41,7 +41,7 @@
     "@types/react-color": "^3.0.13",
     "@uiw/react-color-chrome": "^2.10.1",
     "isbot": "^5.1.31",
-    "prisma": "^6.19.3",
+    "prisma": "6.19.3",
     "react": "^18.3.1",
     "react-color": "^2.19.3",
     "react-colorful": "^5.6.1",

@@ -63,6 +63,8 @@ interface DeliveryRuleData {
 
 interface APIDeliveryResponse {
   enabled: boolean;
+  reason?: string;
+  widgetId?: string;
   countryCode?: string;
   orderDate?: string;
   shipDate?: string;

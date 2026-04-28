@@ -135,3 +135,20 @@ model Widget {
 
   @@index([shop])
 }
+
+model AnalyticsEvent {
+  id          String   @id @default(uuid())
+  shop        String
+  eventType   String
+  productId   String?
+  widgetId    String?
+  countryCode String?
+  productTags Json?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([shop, eventType, createdAt])
+  @@index([shop, countryCode, createdAt])
+  @@index([shop, productId, createdAt])
+}

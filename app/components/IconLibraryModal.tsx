@@ -1,40 +1,166 @@
-import React, { useState } from "react";
-import { Modal, Tabs, TextField, Icon, Button, InlineStack, Box, Text, Bleed, Divider, Grid } from "@shopify/polaris";
-import { SearchIcon, XIcon, CheckCircleIcon } from "@shopify/polaris-icons";
+import { createElement, useEffect, useState } from "react";
+import { Modal, Tabs, TextField, Icon, Button, Box } from "@shopify/polaris";
+import { SearchIcon, CheckCircleIcon } from "@shopify/polaris-icons";
 
-import { WidgetSettingsProps, IconList } from "./WidgetRenderer";
+import { IconList } from "./WidgetRenderer";
 
-// Mock Icon Data
-const ICONS_COLLECTION = [
-  { id: "bag", category: "ordered", name: "Shopping Bag" },
-  { id: "package", category: "ordered", name: "Package Box" },
-  { id: "clock", category: "ordered", name: "Processing Time" },
-  { id: "truck", category: "shipping", name: "Standard Shipping" },
-  { id: "rocket", category: "shipping", name: "Express Delivery" },
-  { id: "box", category: "shipping", name: "Item Box" },
-  { id: "home", category: "delivery", name: "Doorstep Delivery" },
-  { id: "check", category: "delivery", name: "Arrival Success" },
-  { id: "star", category: "delivery", name: "Top Rated" },
-  { id: "gift", category: "delivery", name: "Gift wrapping" },
-  { id: "shield", category: "delivery", name: "Safe & Secure" },
-  { id: "map_pin", category: "delivery", name: "Drop-off Point" },
-  { id: "zap", category: "shipping", name: "Lightning Fast" },
-  { id: "heart", category: "ordered", name: "Favorites" },
-  { id: "calendar", category: "ordered", name: "Ship date" },
-  { id: "globe", category: "delivery", name: "Global Shipping" },
+const PREMIUM_VECTOR_ICONS = [
+  { id: "bag", category: "premium", name: "Premium Order Bag" },
+  { id: "cart", category: "premium", name: "Checkout Cart" },
+  { id: "package", category: "premium", name: "Parcel Box" },
+  { id: "box", category: "premium", name: "Package Case" },
+  { id: "truck", category: "premium", name: "Delivery Truck" },
+  { id: "scooter", category: "premium", name: "Local Courier" },
+  { id: "plane", category: "premium", name: "Air Shipment" },
+  { id: "warehouse", category: "premium", name: "Fulfillment Hub" },
+  { id: "map_pin", category: "premium", name: "Delivery Pin" },
+  { id: "route", category: "premium", name: "Route Tracking" },
+  { id: "home", category: "premium", name: "Delivered Home" },
+  { id: "shield", category: "premium", name: "Protected Delivery" },
+  { id: "check_badge", category: "premium", name: "Verified Check" },
+  { id: "clock", category: "premium", name: "Cutoff Timer" },
+  { id: "calendar", category: "premium", name: "Delivery Date" },
+  { id: "rocket", category: "premium", name: "Express Dispatch" },
+  { id: "heart", category: "premium", name: "Care Promise" },
+  { id: "store", category: "premium", name: "Store Pickup" },
+  { id: "monitor", category: "premium", name: "Online Order" },
+  { id: "tag", category: "premium", name: "Promo Tag" },
+  { id: "sparkles", category: "premium", name: "Premium Promise" },
 ];
+
+// Collection of premium vector icons and legacy PNG icons.
+const ICONS_COLLECTION = [
+  ...PREMIUM_VECTOR_ICONS,
+
+  // Delivery (21 icons)
+  { id: "/icons/delivery/cash-pin-map.png", category: "delivery", name: "Cash Pin Map" },
+  { id: "/icons/delivery/compass-arrow.png", category: "delivery", name: "Compass Arrow" },
+  { id: "/icons/delivery/earth-2.png", category: "delivery", name: "World Map" },
+  { id: "/icons/delivery/house-1.png", category: "delivery", name: "Home" },
+  { id: "/icons/delivery/house-chimney-smoke.png", category: "delivery", name: "Cottage" },
+  { id: "/icons/delivery/house-home-building-2.png", category: "delivery", name: "Building" },
+  { id: "/icons/delivery/maps-pin-1.png", category: "delivery", name: "Map Pin Red" },
+  { id: "/icons/delivery/maps-pin-2.png", category: "delivery", name: "Map Pin Blue" },
+  { id: "/icons/delivery/navigation-car-pin-1.png", category: "delivery", name: "Car Navigation" },
+  { id: "/icons/delivery/pin-location-1.png", category: "delivery", name: "Location Finder" },
+  { id: "/icons/delivery/real-estate-location-house-pin-1.png", category: "delivery", name: "House Finder 1" },
+  { id: "/icons/delivery/real-estate-location-house-pin.png", category: "delivery", name: "House Finder 2" },
+  { id: "/icons/delivery/style-one-pin-home.png", category: "delivery", name: "Modern Home Pin" },
+  { id: "/icons/delivery/style-one-pin.png", category: "delivery", name: "Generic Pin" },
+  { id: "/icons/delivery/style-three-pin-barn-1.png", category: "delivery", name: "Barn Pin" },
+  { id: "/icons/delivery/style-three-pin-shelter.png", category: "delivery", name: "Shelter Pin" },
+  { id: "/icons/delivery/style-three-pin-trailer.png", category: "delivery", name: "Trailer Pin" },
+  { id: "/icons/delivery/style-three-style-pin-empty.png", category: "delivery", name: "Empty Pin" },
+  { id: "/icons/delivery/style-two-pin-marker.png", category: "delivery", name: "Marker Pin" },
+  { id: "/icons/delivery/sync-location.png", category: "delivery", name: "Sync Tracking" },
+  { id: "/icons/delivery/trekking-map.png", category: "delivery", name: "Trekking Map" },
+
+  // Shipping (18 icons)
+  { id: "/icons/shipped/delivery-truck-2.png", category: "shipping", name: "Small Delivery Truck" },
+  { id: "/icons/shipped/delivery-truck-3.png", category: "shipping", name: "Flatbed Truck" },
+  { id: "/icons/shipped/delivery-truck-4.png", category: "shipping", name: "Logistics Truck" },
+  { id: "/icons/shipped/delivery-truck-5.png", category: "shipping", name: "Quick Delivery Truck" },
+  { id: "/icons/shipped/delivery-truck-cargo.png", category: "shipping", name: "Heavy Cargo Truck" },
+  { id: "/icons/shipped/delivery-truck.png", category: "shipping", name: "Standard Truck" },
+  { id: "/icons/shipped/shipment-box.png", category: "shipping", name: "Parcel Box" },
+  { id: "/icons/shipped/shipment-check.png", category: "shipping", name: "Verified Shipment" },
+  { id: "/icons/shipped/shipment-fragile.png", category: "shipping", name: "Fragile Shipment" },
+  { id: "/icons/shipped/shipment-in-transit.png", category: "shipping", name: "In Transit" },
+  { id: "/icons/shipped/shipment-next.png", category: "shipping", name: "Next Day Shipment" },
+  { id: "/icons/shipped/shipment-plane.png", category: "shipping", name: "Air Cargo" },
+  { id: "/icons/shipped/shipment-truck-1.png", category: "shipping", name: "Delivery Van" },
+  { id: "/icons/shipped/shipment-truck.png", category: "shipping", name: "Courier Truck" },
+  { id: "/icons/shipped/shipment-upload.png", category: "shipping", name: "Export Shipment" },
+  { id: "/icons/shipped/truck-cargo.png", category: "shipping", name: "Freight Truck" },
+  { id: "/icons/shipped/warehouse-cart-worker.png", category: "shipping", name: "Warehouse Worker" },
+  { id: "/icons/shipped/warehouse-package-box.png", category: "shipping", name: "Sorting Hub" },
+
+  // Ordered (23 icons)
+  { id: "/icons/ordered/bag-handle.png", category: "ordered", name: "Handbag" },
+  { id: "/icons/ordered/baggage-cart-2.png", category: "ordered", name: "Shopping Cart" },
+  { id: "/icons/ordered/baggage.png", category: "ordered", name: "Baggage" },
+  { id: "/icons/ordered/pets-paw-bag.png", category: "ordered", name: "Pet Shopping" },
+  { id: "/icons/ordered/products-briefcase.png", category: "ordered", name: "Business Order" },
+  { id: "/icons/ordered/products-purse-1.png", category: "ordered", name: "Invoice Wallet" },
+  { id: "/icons/ordered/products-purse-2.png", category: "ordered", name: "Small Purse" },
+  { id: "/icons/ordered/products-purse.png", category: "ordered", name: "Retail Purse" },
+  { id: "/icons/ordered/recycling-bag-1.png", category: "ordered", name: "Eco Bag Light" },
+  { id: "/icons/ordered/recycling-bag.png", category: "ordered", name: "Recycling Bag" },
+  { id: "/icons/ordered/shopping-bag-barcode-1.png", category: "ordered", name: "Digital Bag" },
+  { id: "/icons/ordered/shopping-bag-barcode.png", category: "ordered", name: "Barcode Shopping" },
+  { id: "/icons/ordered/shopping-bag-check.png", category: "ordered", name: "Order Done" },
+  { id: "/icons/ordered/shopping-bag-download.png", category: "ordered", name: "Order Download" },
+  { id: "/icons/ordered/shopping-bag-fire.png", category: "ordered", name: "Hot Order" },
+  { id: "/icons/ordered/shopping-bag-heart.png", category: "ordered", name: "Wishlist Bag" },
+  { id: "/icons/ordered/shopping-bag-play.png", category: "ordered", name: "Video Shopping" },
+  { id: "/icons/ordered/shopping-bag-purse-barcode.png", category: "ordered", name: "Retail Checkout" },
+  { id: "/icons/ordered/shopping-bag-smile.png", category: "ordered", name: "Happy Shopping" },
+  { id: "/icons/ordered/shopping-bag-smiley.png", category: "ordered", name: "Satisfaction Bag" },
+  { id: "/icons/ordered/shopping-bag-tag-1.png", category: "ordered", name: "On Sale Bag" },
+  { id: "/icons/ordered/shopping-bag-tag.png", category: "ordered", name: "Price Tag Bag" },
+  { id: "/icons/ordered/shopping-basket-smile-1.png", category: "ordered", name: "Smile Basket" },
+];
+
+const LORDICON_SCRIPT_ID = "bp-lordicon-player";
+const LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
 
 const ANIMATED_ICONS = [
-  { id: "truck", anim: "animate-bounce", name: "Bouncing Truck" },
-  { id: "rocket", anim: "animate-pulse", name: "Pulsing Rocket" },
-  { id: "package", anim: "hover:rotate-12 transition-transform", name: "Rotating Box" },
+  { id: "cart", name: "Shopping Cart", src: "https://media.lordicon.com/icons/wired/lineal/146-trolley.li" },
+  { id: "bag", name: "Shopping Bag", src: "https://media.lordicon.com/icons/wired/lineal/2870-shopping-bag.li" },
+  { id: "package", name: "Package Box", src: "https://media.lordicon.com/icons/wired/lineal/108-box.li" },
+  { id: "truck", name: "Delivery Truck", src: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li" },
+  { id: "map_pin", name: "Location Pin", src: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li" },
+  { id: "home", name: "Home Delivery", src: "https://media.lordicon.com/icons/wired/lineal/63-home.li" },
+  { id: "clock", name: "Cutoff Timer", src: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li" },
+  { id: "rocket", name: "Express Dispatch", src: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li" },
+  { id: "shield", name: "Protected", src: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li" },
+  { id: "heart", name: "Care Promise", src: "https://media.lordicon.com/icons/wired/lineal/436-love-care.li" },
+  { id: "store", name: "Store Pickup", src: "https://media.lordicon.com/icons/wired/lineal/481-shop.li" },
+  { id: "monitor", name: "Online Order", src: "https://media.lordicon.com/icons/wired/lineal/1359-online-shopping.li" },
+  { id: "tag", name: "Promo Tag", src: "https://media.lordicon.com/icons/wired/lineal/289-price-tag.li" },
 ];
 
+const loadLordiconScript = () => {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(LORDICON_SCRIPT_ID)) return;
+  const script = document.createElement("script");
+  script.id = LORDICON_SCRIPT_ID;
+  script.src = LORDICON_SCRIPT_SRC;
+  script.async = true;
+  document.head.appendChild(script);
+};
+
+const LordiconPreview = ({ src, size = 48 }: { src: string; size?: number }) => {
+  useEffect(() => {
+    loadLordiconScript();
+  }, []);
+
+  return createElement("lord-icon" as any, {
+    src,
+    trigger: "loop",
+    stroke: "regular",
+    loading: "lazy",
+    colors: "primary:#111827,secondary:#64748b",
+    style: { width: `${size}px`, height: `${size}px` },
+  });
+};
+
 const IconPreview = ({ id, color = "#000", size = 32, className = "" }: { id: string, color?: string, size?: number, className?: string }) => {
+  if (id.startsWith("/icons/") || id.includes(".png")) {
+    return (
+      <img 
+        src={id} 
+        alt="" 
+        key={id} // Force re-render on change
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block' }} 
+        className={className} 
+      />
+    );
+  }
   const IconComp = IconList[id] || IconList["package"];
   return (
-    <div className={className}>
-      <IconComp c={color} s={size} />
+    <div className={className} style={{ color }}>
+      <IconComp s={size} />
     </div>
   );
 };
@@ -51,6 +177,9 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [tempSelected, setTempSelected] = useState(currentIcon || "");
+  const selectedAnimatedIcon = selectedTab === 1
+    ? ANIMATED_ICONS.find((icon) => icon.id === tempSelected)
+    : undefined;
 
   const tabs = [
     { id: "icons", content: "Icons" },
@@ -87,7 +216,7 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
             <>
               <div className="p-4 space-y-4">
                 <div className="flex gap-2">
-                   {["all", "ordered", "shipping", "delivery"].map(cat => (
+                   {["all", "premium", "ordered", "shipping", "delivery"].map(cat => (
                      <button
                        key={cat}
                        onClick={() => setFilter(cat)}
@@ -113,7 +242,7 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
                     <div
                       key={icon.id}
                       onClick={() => setTempSelected(icon.id)}
-                      className={`aspect-square rounded-lg border flex items-center justify-center cursor-pointer transition-all hover:scale-110 ${tempSelected === icon.id ? 'border-black bg-gray-50 shadow-sm' : 'border-gray-100 hover:border-gray-300'}`}
+                      className={`aspect-square rounded-lg border flex items-center justify-center cursor-pointer transition-colors ${tempSelected === icon.id ? 'border-black bg-gray-50 shadow-sm' : 'border-gray-100 hover:border-gray-300'}`}
                     >
                        <IconPreview id={icon.id} size={28} />
                     </div>
@@ -132,8 +261,8 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
                       onClick={() => setTempSelected(icon.id)}
                       className={`p-6 rounded-xl border flex flex-col items-center gap-3 cursor-pointer transition-all ${tempSelected === icon.id ? 'border-black bg-gray-50' : 'border-gray-100 hover:border-gray-300'}`}
                     >
-                       <div className={icon.anim}>
-                         <IconPreview id={icon.id} size={48} />
+                       <div className="w-14 h-14 flex items-center justify-center">
+                         <LordiconPreview src={icon.src} size={52} />
                        </div>
                        <span className="text-[10px] text-gray-500">{icon.name}</span>
                     </div>
@@ -161,7 +290,11 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
            <div className="relative">
              <div className="w-32 h-32 rounded-3xl bg-white shadow-xl flex items-center justify-center border border-gray-100 overflow-hidden">
                 {tempSelected ? (
-                  <IconPreview id={tempSelected} size={64} className={ANIMATED_ICONS.find(a => a.id === tempSelected)?.anim || ""} />
+                  selectedAnimatedIcon ? (
+                    <LordiconPreview src={selectedAnimatedIcon.src} size={72} />
+                  ) : (
+                    <IconPreview id={tempSelected} size={64} />
+                  )
                 ) : (
                   <span className="text-gray-300">Preview</span>
                 )}
@@ -174,7 +307,7 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
            </div>
            
            <div className="text-center">
-              <p className="font-bold text-gray-900">{tempSelected ? (ICONS_COLLECTION.find(i => i.id === tempSelected)?.name || "Animated Icon") : "Select an icon"}</p>
+              <p className="font-bold text-gray-900">{tempSelected ? (selectedAnimatedIcon?.name || ICONS_COLLECTION.find(i => i.id === tempSelected)?.name || "Animated Icon") : "Select an icon"}</p>
               <p className="text-xs text-gray-500 mt-1">This will be applied to your selected step.</p>
            </div>
 

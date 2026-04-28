@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { Prisma } from "@prisma/client";
 import { useLoaderData, useSubmit, useNavigation, useNavigate, data as routerData } from "react-router";
 import { useState } from "react";
 import { 
@@ -27,6 +28,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
+import { buildFallbackBlocks, DEFAULT_SHIPPING_MESSAGE, parseBlockConfigs } from "../lib/delivery";
 
 // ─── Helper Components ────────────────────────────────────────────────────────
 const ToolbarButton = ({ icon, label, bold, italic, underline, colorIcon, bgIcon }: any) => (
@@ -83,24 +85,37 @@ const CollapsibleCard = ({ title, badge, children, defaultOpen = false }: any) =
   );
 };
 
-// ─── Loader (Fetch Default Widget) ───────────────────────────────────────────
+// ─── Loader (Fetch Default Widget & Settings) ────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const widgets: any[] = await prisma.$queryRaw`SELECT * FROM "Widget" WHERE shop = ${shop} ORDER BY "isDefault" DESC, "createdAt" DESC`;
+  const [widgets, appSetting] = await Promise.all([
+    prisma.widget.findMany({
+      where: { shop },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+    }),
+    prisma.appSetting.findUnique({ where: { shop } })
+  ]);
   
   if (widgets.length === 0) {
-      const id = Math.random().toString(36).substr(2, 9);
-      await prisma.$executeRaw`
-        INSERT INTO "Widget" (id, shop, name, "isDefault", "isActive", "createdAt", "updatedAt")
-        VALUES (${id}, ${shop}, 'Default Widget', true, true, NOW(), NOW())
-      `;
-      const newWidgets: any[] = await prisma.$queryRaw`SELECT * FROM "Widget" WHERE id = ${id}`;
-      return routerData({ defaultWidget: newWidgets[0] });
+      const defaultWidget = await prisma.widget.create({
+        data: {
+          shop,
+          name: "Default Widget",
+          isDefault: true,
+          isActive: true,
+          padding: 16,
+          customBlocks: buildFallbackBlocks(
+            {},
+            DEFAULT_SHIPPING_MESSAGE,
+          ) as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return routerData({ defaultWidget, appSetting, shop });
   }
 
-  return routerData({ defaultWidget: widgets[0] });
+  return routerData({ defaultWidget: widgets[0], appSetting, shop });
 };
 
 // ─── Action (Updates) ────────────────────────────────────────────────────────
@@ -111,20 +126,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const id = formData.get("id") as string;
   const headerText = formData.get("headerText") as string;
   const isActive = formData.get("isActive") === "true";
+  const isEnabled = formData.get("isEnabled") === "true";
 
-  await prisma.$executeRaw`
-    UPDATE "Widget" SET 
-      "headerText" = ${headerText}, 
-      "isActive" = ${isActive},
-      "updatedAt" = NOW()
-    WHERE id = ${id} AND shop = ${session.shop}
-  `;
+  // Cập nhật Widget
+  await prisma.widget.updateMany({
+    where: { id, shop: session.shop },
+    data: { headerText, isActive },
+  });
+
+  // Cập nhật AppSetting (Toàn cục)
+  await prisma.appSetting.upsert({
+    where: { shop: session.shop },
+    update: { isEnabled },
+    create: {
+      shop: session.shop,
+      isEnabled,
+      widgetStyle: 'modern'
+    }
+  });
+
   return routerData({ success: true });
 };
 
 // ─── Main Component (Premium UI) ─────────────────────────────────────────────
 export default function SettingsPage() {
-  const { defaultWidget } = useLoaderData<typeof loader>();
+  const { defaultWidget, appSetting, shop } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -132,12 +158,16 @@ export default function SettingsPage() {
 
   const [headerText, setHeaderText] = useState(defaultWidget?.headerText || "");
   const [isActive, setIsActive] = useState(defaultWidget?.isActive ?? true);
+  const [isEnabled, setIsEnabled] = useState(appSetting?.isEnabled ?? false);
+  const shopHandle = shop.split(".")[0];
+  const themeEditorUrl = `https://admin.shopify.com/store/${shopHandle}/themes/current/editor?context=apps`;
 
-  const handleSaveQuick = () => {
+  const handleSaveQuick = (newIsActive: boolean, newIsEnabled: boolean) => {
     const formData = new FormData();
     formData.append("id", defaultWidget.id);
     formData.append("headerText", headerText);
-    formData.append("isActive", String(isActive));
+    formData.append("isActive", String(newIsActive));
+    formData.append("isEnabled", String(newIsEnabled));
     submit(formData, { method: "post" });
   };
 
@@ -174,20 +204,25 @@ export default function SettingsPage() {
         <div className="flex-1 space-y-6">
             {/* 1. ACTIVATE APP CARD */}
             <div className="bg-white rounded-2xl border border-gray-200 p-1 flex items-center shadow-sm overflow-hidden">
-               <div className={`w-2 self-stretch ${isActive ? 'bg-green-500' : 'bg-amber-500'}`} />
+               <div className={`w-2 self-stretch ${isEnabled ? 'bg-green-500' : 'bg-amber-500'}`} />
                <div className="flex-1 p-5 flex items-center justify-between">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-bold text-gray-800">Extension Visibility</h2>
-                      <Badge tone={isActive ? 'success' : 'attention'}>{isActive ? "Live" : "Paused"}</Badge>
+                      <h2 className="text-sm font-bold text-gray-800">Global Activation</h2>
+                      <Badge tone={isEnabled ? 'success' : 'attention'}>{isEnabled ? "Live" : "Disabled"}</Badge>
                     </div>
-                    <p className="text-xs text-gray-400">Control the global visibility of your delivery widgets.</p>
+                    <p className="text-xs text-gray-400">Main switch to enable or disable the app on your store.</p>
                   </div>
                   <button 
-                     onClick={() => setIsActive(!isActive)}
-                     className={`px-6 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${isActive ? 'bg-gray-50 text-gray-600 hover:bg-gray-100' : 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-100'}`}
+                     onClick={() => {
+                        const newStatus = !isEnabled;
+                        setIsEnabled(newStatus);
+                        handleSaveQuick(isActive, newStatus);
+                     }}
+                     disabled={isSubmitting}
+                     className={`px-6 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${isEnabled ? 'bg-gray-50 text-gray-600 hover:bg-gray-100' : 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-100'} ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isActive ? "Turn Off" : "Go Live"}
+                    {isEnabled ? "Turn Off" : "Activate App"}
                   </button>
                </div>
             </div>
@@ -223,6 +258,8 @@ export default function SettingsPage() {
                       <WidgetPreviewRenderer 
                           settings={{
                             ...defaultWidget,
+                            style: "custom",
+                            customBlocks: parseBlockConfigs(defaultWidget.customBlocks),
                             isActive: true
                           }} 
                         />
@@ -259,7 +296,7 @@ export default function SettingsPage() {
                            <p className="text-xs text-gray-400">Position the widget on your product pages.</p>
                         </div>
                         <button 
-                          onClick={() => window.open('https://admin.shopify.com/store/dung-test-store/themes/current/editor?context=apps', '_blank')}
+                          onClick={() => window.open(themeEditorUrl, '_blank')}
                           className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-black shadow-lg transition-all"
                         >
                           <div className="w-4 h-4 text-white"><Icon source={ViewIcon} /></div> Open Theme Editor
@@ -324,6 +361,7 @@ export default function SettingsPage() {
                             settings={{
                               ...defaultWidget,
                               style: 'moment_meter' as any,
+                              customBlocks: parseBlockConfigs(defaultWidget.customBlocks),
                               isActive: true
                             }} 
                            />

@@ -117,7 +117,7 @@ export default function DashboardHome() {
                 <div className="w-4 h-4 text-gray-500"><Icon source={SettingsIcon} /></div> Settings
               </button>
               <button 
-                onClick={() => navigate("/app/widgets/new")}
+                onClick={() => navigate("/app/rules")}
                 className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md active:scale-95"
               >
                 <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div> New Rule

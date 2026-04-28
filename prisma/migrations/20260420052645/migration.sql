@@ -1,0 +1,63 @@
+-- AlterTable
+ALTER TABLE "AppSetting" ADD COLUMN     "bgColor" TEXT NOT NULL DEFAULT '#ffffff',
+ADD COLUMN     "bgGradient" TEXT,
+ADD COLUMN     "borderColor" TEXT NOT NULL DEFAULT '#e5e7eb',
+ADD COLUMN     "borderRadius" INTEGER NOT NULL DEFAULT 10,
+ADD COLUMN     "customBlocks" JSONB,
+ADD COLUMN     "glassmorphism" BOOLEAN DEFAULT false,
+ADD COLUMN     "headerText" TEXT DEFAULT 'Receive your order : {min_date} to {max_date}',
+ADD COLUMN     "padding" INTEGER DEFAULT 0,
+ADD COLUMN     "shadow" TEXT DEFAULT 'none',
+ADD COLUMN     "step1Icon" TEXT DEFAULT 'bag',
+ADD COLUMN     "step1Label" TEXT DEFAULT 'Order Now',
+ADD COLUMN     "step1SubText" TEXT DEFAULT '{order_date}',
+ADD COLUMN     "step2Icon" TEXT DEFAULT 'truck',
+ADD COLUMN     "step2Label" TEXT DEFAULT 'Ready to Ship',
+ADD COLUMN     "step2SubText" TEXT DEFAULT '{ship_date}',
+ADD COLUMN     "step3Icon" TEXT DEFAULT 'home',
+ADD COLUMN     "step3Label" TEXT DEFAULT 'At Doorstep',
+ADD COLUMN     "step3SubText" TEXT DEFAULT '{max_date}',
+ADD COLUMN     "subHeaderText" TEXT;
+
+-- CreateTable
+CREATE TABLE "Widget" (
+    "id" TEXT NOT NULL,
+    "shop" TEXT NOT NULL,
+    "name" TEXT NOT NULL DEFAULT 'Untitled Widget',
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "targetCountries" JSONB,
+    "targetProducts" JSONB,
+    "targetTags" JSONB,
+    "widgetStyle" TEXT NOT NULL DEFAULT 'custom',
+    "customBlocks" JSONB,
+    "textColor" TEXT NOT NULL DEFAULT '#000000',
+    "iconColor" TEXT NOT NULL DEFAULT '#0033cc',
+    "bgColor" TEXT NOT NULL DEFAULT '#ffffff',
+    "borderColor" TEXT NOT NULL DEFAULT '#e5e7eb',
+    "borderRadius" INTEGER NOT NULL DEFAULT 10,
+    "shadow" TEXT DEFAULT 'none',
+    "glassmorphism" BOOLEAN DEFAULT false,
+    "padding" INTEGER DEFAULT 0,
+    "bgGradient" TEXT,
+    "showTimeline" BOOLEAN NOT NULL DEFAULT true,
+    "policyText" TEXT,
+    "headerText" TEXT,
+    "subHeaderText" TEXT,
+    "step1Label" TEXT,
+    "step1SubText" TEXT,
+    "step1Icon" TEXT,
+    "step2Label" TEXT,
+    "step2SubText" TEXT,
+    "step2Icon" TEXT,
+    "step3Label" TEXT,
+    "step3SubText" TEXT,
+    "step3Icon" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Widget_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "Widget_shop_idx" ON "Widget"("shop");

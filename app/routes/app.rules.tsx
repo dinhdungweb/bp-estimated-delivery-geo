@@ -1,103 +1,180 @@
 /**
- * BP: Estimated Delivery & Geo — Delivery Rules Manager
- * Copyright © 2025 BluePeaks. All rights reserved.
- * https://bluepeaks.top
- *
- * This software is proprietary and confidential.
- * Unauthorized copying, modification, or distribution of this file,
- * via any medium, is strictly prohibited.
+ * BP: Estimated Delivery & Geo - Delivery Rules Manager
+ * Copyright (c) 2025 BluePeaks. All rights reserved.
  */
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useSubmit, useNavigation, data } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
-  Page,
-  Card,
-  IndexTable,
-  Text,
+  data,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+  useSubmit,
+} from "react-router";
+import {
   Badge,
-  Button,
-  Modal,
-  FormLayout,
-  TextField,
-  Select,
   Banner,
-  EmptyState,
-  Tooltip,
   BlockStack,
-  InlineStack,
-  Icon,
+  FormLayout,
+  Modal,
+  Select,
+  Text,
+  TextField,
 } from "@shopify/polaris";
-import {
-  ProductIcon,
-  DiscountIcon,
-  LocationIcon,
-  InventoryIcon,
-  GlobeIcon,
-  EmailIcon,
-  StoreIcon,
-} from "@shopify/polaris-icons";
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { normalizeCountry } from "../lib/delivery";
 
-// ─── Danh sách quốc gia phổ biến ────────────────────────────────────────────
+type RuleRow = {
+  id: string;
+  countryCode: string;
+  minDays: number;
+  maxDays: number;
+  processingDays: number;
+  shippingMessage: string;
+  isActive: boolean;
+};
+
+type ActionResult = {
+  success?: boolean;
+  error?: string;
+};
+
 const COUNTRIES = [
-  { value: "AU", label: "🇦🇺 Australia" },
-  { value: "US", label: "🇺🇸 United States" },
-  { value: "GB", label: "🇬🇧 United Kingdom" },
-  { value: "CA", label: "🇨🇦 Canada" },
-  { value: "DE", label: "🇩🇪 Germany" },
-  { value: "FR", label: "🇫🇷 France" },
-  { value: "JP", label: "🇯🇵 Japan" },
-  { value: "SG", label: "🇸🇬 Singapore" },
-  { value: "NZ", label: "🇳🇿 New Zealand" },
-  { value: "VN", label: "🇻🇳 Vietnam" },
-  { value: "TH", label: "🇹🇭 Thailand" },
-  { value: "MY", label: "🇲🇾 Malaysia" },
-  { value: "ID", label: "🇮🇩 Indonesia" },
-  { value: "KR", label: "🇰🇷 South Korea" },
-  { value: "IN", label: "🇮🇳 India" },
-  { value: "AE", label: "🇦🇪 UAE" },
-  { value: "ZA", label: "🇿🇦 South Africa" },
-  { value: "MX", label: "🇲🇽 Mexico" },
-  { value: "BR", label: "🇧🇷 Brazil" },
-  { value: "OTHER", label: "🌍 Rest of World" },
+  { value: "AU", label: "Australia" },
+  { value: "US", label: "United States" },
+  { value: "GB", label: "United Kingdom" },
+  { value: "CA", label: "Canada" },
+  { value: "DE", label: "Germany" },
+  { value: "FR", label: "France" },
+  { value: "JP", label: "Japan" },
+  { value: "SG", label: "Singapore" },
+  { value: "NZ", label: "New Zealand" },
+  { value: "VN", label: "Vietnam" },
+  { value: "TH", label: "Thailand" },
+  { value: "MY", label: "Malaysia" },
+  { value: "ID", label: "Indonesia" },
+  { value: "KR", label: "South Korea" },
+  { value: "IN", label: "India" },
+  { value: "AE", label: "UAE" },
+  { value: "ZA", label: "South Africa" },
+  { value: "MX", label: "Mexico" },
+  { value: "BR", label: "Brazil" },
+  { value: "OTHER", label: "Rest of World" },
 ];
 
-// ─── Loader ──────────────────────────────────────────────────────────────────
+const DEFAULT_MESSAGE = "Order today and get it by: {min_date} - {max_date}";
+
+function parseNonNegativeInt(value: FormDataEntryValue | null, fallback: number): number | null {
+  const parsed = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 365) return null;
+  return parsed;
+}
+
+function getCountryLabel(code: string) {
+  return COUNTRIES.find((country) => country.value === code)?.label ?? code;
+}
+
+function daysLabel(value: number) {
+  return value === 1 ? "1 day" : `${value} days`;
+}
+
+function previewMessage(message: string) {
+  return message
+    .replaceAll("{order_date}", "Apr 28")
+    .replaceAll("{ship_date}", "Apr 29")
+    .replaceAll("{min_date}", "May 2")
+    .replaceAll("{max_date}", "May 6");
+}
+
+function readRulePayload(formData: FormData) {
+  const countryCode = normalizeCountry(formData.get("countryCode"));
+  const minDays = parseNonNegativeInt(formData.get("minDays"), 3);
+  const maxDays = parseNonNegativeInt(formData.get("maxDays"), 7);
+  const processingDays = parseNonNegativeInt(formData.get("processingDays"), 1);
+  const shippingMessage = String(formData.get("shippingMessage") || DEFAULT_MESSAGE).trim();
+
+  if (!COUNTRIES.some((country) => country.value === countryCode)) {
+    return { error: "Invalid country code." };
+  }
+
+  if (minDays === null || maxDays === null || processingDays === null) {
+    return { error: "Delivery days must be whole numbers between 0 and 365." };
+  }
+
+  if (minDays > maxDays) {
+    return { error: "Min delivery days cannot be greater than max delivery days." };
+  }
+
+  if (shippingMessage.length === 0 || shippingMessage.length > 500) {
+    return { error: "Shipping message must be between 1 and 500 characters." };
+  }
+
+  return { countryCode, minDays, maxDays, processingDays, shippingMessage };
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const rules = await prisma.deliveryRule.findMany({
     where: { shop: session.shop },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ isActive: "desc" }, { countryCode: "asc" }],
   });
+
   return data({ rules, shop: session.shop });
 };
 
-// ─── Action ──────────────────────────────────────────────────────────────────
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent"));
 
-  if (intent === "create") {
-    const countryCode = String(formData.get("countryCode"));
-    const minDays = parseInt(String(formData.get("minDays") || "3"), 10);
-    const maxDays = parseInt(String(formData.get("maxDays") || "7"), 10);
-    const processingDays = parseInt(String(formData.get("processingDays") || "1"), 10);
-    const shippingMessage = String(formData.get("shippingMessage") || "Order today and get it by: {min_date} - {max_date}");
+  if (intent === "create" || intent === "update") {
+    const payload = readRulePayload(formData);
+    if ("error" in payload) {
+      return data({ error: payload.error }, { status: 400 });
+    }
 
-    // Kiểm tra không trùng quốc gia
-    const existing = await prisma.deliveryRule.findFirst({
-      where: { shop: session.shop, countryCode },
+    const id = String(formData.get("id") || "");
+    if (intent === "update" && !id) {
+      return data({ error: "Rule id is required." }, { status: 400 });
+    }
+
+    const duplicate = await prisma.deliveryRule.findFirst({
+      where: {
+        shop: session.shop,
+        countryCode: payload.countryCode,
+        ...(intent === "update" ? { NOT: { id } } : {}),
+      },
     });
-    if (existing) {
+
+    if (duplicate) {
       return data({ error: "A rule for this country already exists." }, { status: 400 });
     }
 
-    await prisma.deliveryRule.create({
-      data: { shop: session.shop, countryCode, minDays, maxDays, processingDays, shippingMessage },
-    });
+    if (intent === "create") {
+      await prisma.deliveryRule.create({
+        data: {
+          shop: session.shop,
+          countryCode: payload.countryCode,
+          minDays: payload.minDays,
+          maxDays: payload.maxDays,
+          processingDays: payload.processingDays,
+          shippingMessage: payload.shippingMessage,
+        },
+      });
+    } else {
+      await prisma.deliveryRule.updateMany({
+        where: { id, shop: session.shop },
+        data: {
+          countryCode: payload.countryCode,
+          minDays: payload.minDays,
+          maxDays: payload.maxDays,
+          processingDays: payload.processingDays,
+          shippingMessage: payload.shippingMessage,
+        },
+      });
+    }
+
     return data({ success: true });
   }
 
@@ -110,318 +187,323 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "toggle") {
     const id = String(formData.get("id"));
     const isActive = formData.get("isActive") === "true";
-    await prisma.deliveryRule.updateMany({ where: { id, shop: session.shop }, data: { isActive: !isActive } });
+    await prisma.deliveryRule.updateMany({
+      where: { id, shop: session.shop },
+      data: { isActive: !isActive },
+    });
     return data({ success: true });
   }
 
-  return data({ error: "Unknown intent" }, { status: 400 });
+  return data({ error: "Unknown intent." }, { status: 400 });
 };
 
-// ─── Component ───────────────────────────────────────────────────────────────
 export default function RulesPage() {
   const loaderData = useLoaderData<typeof loader>();
-  const rules = loaderData?.rules ?? [];
+  const rules = useMemo(() => (loaderData?.rules ?? []) as RuleRow[], [loaderData?.rules]);
+  const actionData = useActionData() as ActionResult | undefined;
   const submit = useSubmit();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const actionError = actionData?.error;
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState("AU");
   const [minDays, setMinDays] = useState("3");
   const [maxDays, setMaxDays] = useState("7");
   const [processingDays, setProcessingDays] = useState("1");
-  const [shippingMessage, setShippingMessage] = useState(
-    "Order today and get it by: {min_date} - {max_date}"
-  );
+  const [shippingMessage, setShippingMessage] = useState(DEFAULT_MESSAGE);
 
-  const handleCreate = useCallback(() => {
+  const summary = useMemo(() => {
+    const active = rules.filter((rule) => rule.isActive).length;
+    const fallbackRule = rules.find((rule) => rule.countryCode === "OTHER");
+    const averageMax = rules.length
+      ? Math.round(rules.reduce((sum, rule) => sum + rule.maxDays, 0) / rules.length)
+      : 0;
+
+    return {
+      total: rules.length,
+      active,
+      inactive: rules.length - active,
+      fallback: fallbackRule ? "Configured" : "Missing",
+      averageMax,
+    };
+  }, [rules]);
+
+  useEffect(() => {
+    if (actionData?.success) {
+      setModalOpen(false);
+      setEditingRuleId(null);
+    }
+  }, [actionData]);
+
+  const openCreateModal = useCallback(() => {
+    setEditingRuleId(null);
+    setCountryCode("AU");
+    setMinDays("3");
+    setMaxDays("7");
+    setProcessingDays("1");
+    setShippingMessage(DEFAULT_MESSAGE);
+    setModalOpen(true);
+  }, []);
+
+  const handleEdit = useCallback((rule: RuleRow) => {
+    setEditingRuleId(rule.id);
+    setCountryCode(rule.countryCode);
+    setMinDays(String(rule.minDays));
+    setMaxDays(String(rule.maxDays));
+    setProcessingDays(String(rule.processingDays));
+    setShippingMessage(rule.shippingMessage);
+    setModalOpen(true);
+  }, []);
+
+  const handleSave = useCallback(() => {
     const formData = new FormData();
-    formData.append("intent", "create");
+    formData.append("intent", editingRuleId ? "update" : "create");
+    if (editingRuleId) formData.append("id", editingRuleId);
     formData.append("countryCode", countryCode);
     formData.append("minDays", minDays);
     formData.append("maxDays", maxDays);
     formData.append("processingDays", processingDays);
     formData.append("shippingMessage", shippingMessage);
     submit(formData, { method: "post" });
-    setModalOpen(false);
-  }, [countryCode, minDays, maxDays, processingDays, shippingMessage, submit]);
+  }, [editingRuleId, countryCode, minDays, maxDays, processingDays, shippingMessage, submit]);
 
   const handleDelete = useCallback((id: string) => {
-    if (!confirm("Delete this rule?")) return;
-    const formData = new FormData();
-    formData.append("intent", "delete");
-    formData.append("id", id);
-    submit(formData, { method: "post" });
+    if (!confirm("Delete this delivery rule?")) return;
+    submit({ intent: "delete", id }, { method: "post" });
   }, [submit]);
 
   const handleToggle = useCallback((id: string, isActive: boolean) => {
-    const formData = new FormData();
-    formData.append("intent", "toggle");
-    formData.append("id", id);
-    formData.append("isActive", String(isActive));
-    submit(formData, { method: "post" });
+    submit({ intent: "toggle", id, isActive: String(isActive) }, { method: "post" });
   }, [submit]);
-
-  const getCountryLabel = (code: string) => {
-    return COUNTRIES.find((c) => c.value === code)?.label ?? code;
-  };
-
-  const rowMarkup = rules.map((rule: { id: string; countryCode: string; minDays: number; maxDays: number; processingDays: number; shippingMessage: string; isActive: boolean }, index: number) => (
-    <IndexTable.Row id={rule.id} key={rule.id} position={index}>
-      <IndexTable.Cell>
-        <Text variant="headingSm" as="span">{getCountryLabel(rule.countryCode)}</Text>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <div className="flex items-center gap-1">
-          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-700/10">
-            {rule.minDays}–{rule.maxDays} days
-          </span>
-        </div>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <span className="text-sm text-gray-500">{rule.processingDays} day(s)</span>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Tooltip content={rule.shippingMessage}>
-          <span className="max-w-xs truncate text-sm text-gray-600 cursor-help">
-            {rule.shippingMessage.length > 40
-              ? rule.shippingMessage.slice(0, 40) + "..."
-              : rule.shippingMessage}
-          </span>
-        </Tooltip>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Badge tone={rule.isActive ? "success" : "critical"}>
-          {rule.isActive ? "Active" : "Inactive"}
-        </Badge>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <InlineStack gap="200">
-          <Button
-            size="slim"
-            onClick={() => handleToggle(rule.id, rule.isActive)}
-            loading={isSubmitting}
-          >
-            {rule.isActive ? "Disable" : "Enable"}
-          </Button>
-          <Button
-            size="slim"
-            tone="critical"
-            onClick={() => handleDelete(rule.id)}
-            loading={isSubmitting}
-          >
-            Delete
-          </Button>
-        </InlineStack>
-      </IndexTable.Cell>
-    </IndexTable.Row>
-  ));
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
-      <div className="max-w-5xl mx-auto space-y-4">
-        <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Delivery Rules</h1>
-          <p className="text-sm text-gray-500 mt-1">Configure estimated delivery times per country</p>
+      <div className="mx-auto max-w-6xl space-y-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Delivery Rules</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Control estimated delivery dates by shipping country.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-black"
+          >
+            Add rule
+          </button>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          Add Rule
-        </button>
-      </div>
-      {/* Banner hướng dẫn */}
-      <div className="mb-4">
-        <Banner title="How it works" tone="info">
+
+        {actionError && (
+          <Banner title="Rule could not be saved" tone="critical">
+            <p>{actionError}</p>
+          </Banner>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Total rules</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{summary.total}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active</p>
+            <p className="mt-2 text-2xl font-bold text-green-700">{summary.active}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Fallback</p>
+            <p className="mt-2 text-lg font-bold text-gray-900">{summary.fallback}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Avg max ETA</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {summary.averageMax ? daysLabel(summary.averageMax) : "-"}
+            </p>
+          </div>
+        </div>
+
+        <Banner title="How storefront matching works" tone="info">
           <p>
-            Create rules for each country. The widget on your product pages will automatically
-            show estimated delivery dates based on the visitor&apos;s location.
-            Use <code className="bg-blue-50 px-1 rounded text-blue-700">{"{min_date}"}</code> and{" "}
-            <code className="bg-blue-50 px-1 rounded text-blue-700">{"{max_date}"}</code> as dynamic
-            placeholders in your message.
+            The storefront first tries an exact country rule, then falls back to Rest of World.
+            If no active rule is found, the delivery widget stays hidden for that visitor.
           </p>
         </Banner>
-      </div>
 
-      {/* Recommended rules */}
-      <div className="mb-6 bg-white p-4 rounded-xl border border-gray-200">
-        <Text variant="headingSm" as="h3">Recommended rules</Text>
-        <div className="mt-1 mb-3">
-          <Text variant="bodySm" as="p" tone="subdued">
-            Create estimated delivery date customized by specific conditions
-          </Text>
-        </div>
-        
-        <div className="flex gap-3 overflow-x-auto pb-2 styled-scrollbar">
-          {[
-            { id: "collections", label: "Specific collections", icon: ProductIcon },
-            { id: "tags", label: "Product tags", icon: DiscountIcon },
-            { id: "locations", label: "Inventory locations", icon: LocationIcon },
-            { id: "quantity", label: "Inventory quantity", icon: InventoryIcon },
-            { id: "regions", label: "Regions, Countries", icon: GlobeIcon },
-            { id: "zipcodes", label: "Zipcodes", icon: EmailIcon },
-            { id: "markets", label: "Shopify Markets", icon: StoreIcon },
-          ].map((rule) => (
-            <div
-              key={rule.id}
-              className={`flex-shrink-0 flex flex-col items-center justify-center p-3 w-[110px] h-[100px] border rounded-xl cursor-pointer transition-all ${
-                rule.id === "collections"
-                  ? "border-blue-600 bg-white ring-1 ring-blue-600 shadow-sm"
-                  : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
-              }`}
-            >
-              <div className="mb-2 text-gray-500">
-                <Icon source={rule.icon} tone="base" />
-              </div>
-              <span className="text-[12px] font-medium text-center leading-tight text-gray-700 whitespace-normal">
-                {rule.label}
-              </span>
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+            <div>
+              <Text as="h2" variant="headingMd">Country ETA rules</Text>
+              <p className="mt-1 text-xs text-gray-500">
+                Use placeholders: {"{order_date}"}, {"{ship_date}"}, {"{min_date}"}, {"{max_date}"}.
+              </p>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* RULES TABLE CARD */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-        {rules.length === 0 ? (
-          <div className="p-16 text-center space-y-4">
-             <div className="text-4xl">🚚</div>
-             <div className="space-y-1">
-                <p className="text-base font-bold text-gray-800">No delivery rules yet</p>
-                <p className="text-sm text-gray-400">Add rules for each country to show estimated shipping dates.</p>
-             </div>
-             <button
-               onClick={() => setModalOpen(true)}
-               className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all"
-             >
-               Add your first rule
-             </button>
+            {summary.inactive > 0 && (
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                {summary.inactive} inactive
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse font-sans">
-               <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Country</th>
-                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Delivery Time</th>
-                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Processing</th>
-                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+
+          {rules.length === 0 ? (
+            <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
+              <div className="mb-4 rounded-full bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-500">
+                No rules
+              </div>
+              <h3 className="text-base font-bold text-gray-900">Create your first delivery rule</h3>
+              <p className="mt-2 max-w-md text-sm text-gray-500">
+                Add a country rule so the storefront can calculate delivery dates and render the ETA widget.
+              </p>
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="mt-5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black"
+              >
+                Add first rule
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Country</th>
+                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Timeline</th>
+                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Storefront message</th>
+                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Status</th>
+                    <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-gray-500">Actions</th>
                   </tr>
-               </thead>
-               <tbody className="divide-y divide-gray-50">
-                  {rules.map((rule: any) => (
-                    <tr key={rule.id} className="hover:bg-gray-50/50 transition-colors group">
-                       <td className="px-6 py-4">
-                          <Text variant="bodyMd" fontWeight="bold" as="span">{getCountryLabel(rule.countryCode)}</Text>
-                       </td>
-                       <td className="px-6 py-4">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-xs font-bold text-blue-700">
-                             {rule.minDays}–{rule.maxDays} days
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rules.map((rule) => (
+                    <tr key={rule.id} className="align-top transition-colors hover:bg-gray-50">
+                      <td className="px-5 py-4">
+                        <p className="text-sm font-bold text-gray-900">{getCountryLabel(rule.countryCode)}</p>
+                        <p className="mt-1 text-xs text-gray-400">{rule.countryCode}</p>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="space-y-1">
+                          <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                            {daysLabel(rule.minDays)} - {daysLabel(rule.maxDays)}
                           </span>
-                       </td>
-                       <td className="px-6 py-4">
-                          <span className="text-xs text-gray-500 font-medium">{rule.processingDays} day(s)</span>
-                       </td>
-                       <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${rule.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                             <span className={`w-1 h-1 rounded-full ${rule.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
-                             {rule.isActive ? "Active" : "Inactive"}
-                          </span>
-                       </td>
-                       <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                             <button
-                               onClick={() => handleToggle(rule.id, rule.isActive)}
-                               className={`px-3 py-1.5 border rounded-md text-xs font-bold transition-all shadow-sm ${
-                                 rule.isActive ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50' : 'bg-gray-900 border-gray-900 text-white hover:bg-gray-800'
-                               }`}
-                             >
-                               {rule.isActive ? "Disable" : "Enable"}
-                             </button>
-                             <button
-                               onClick={() => handleDelete(rule.id)}
-                               className="px-3 py-1.5 bg-white border border-red-200 rounded-md text-xs font-bold text-red-500 hover:bg-red-50 shadow-sm transition-all"
-                             >
-                               Delete
-                             </button>
-                          </div>
-                       </td>
+                          <p className="text-xs text-gray-500">Processing: {daysLabel(rule.processingDays)}</p>
+                        </div>
+                      </td>
+                      <td className="max-w-md px-5 py-4">
+                        <p className="line-clamp-2 text-sm font-medium text-gray-700">{rule.shippingMessage}</p>
+                        <p className="mt-1 line-clamp-1 text-xs text-gray-400">
+                          Preview: {previewMessage(rule.shippingMessage)}
+                        </p>
+                      </td>
+                      <td className="px-5 py-4">
+                        <Badge tone={rule.isActive ? "success" : "critical"}>
+                          {rule.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(rule)}
+                            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggle(rule.id, rule.isActive)}
+                            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                          >
+                            {rule.isActive ? "Disable" : "Enable"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(rule.id)}
+                            className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 shadow-sm hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
-               </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-      {/* Modal tạo rule mới */}
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="Add Delivery Rule"
-        primaryAction={{
-          content: "Save Rule",
-          onAction: handleCreate,
-          loading: isSubmitting,
-        }}
-        secondaryActions={[{ content: "Cancel", onAction: () => setModalOpen(false) }]}
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <Select
-              label="Country"
-              options={COUNTRIES}
-              value={countryCode}
-              onChange={setCountryCode}
-            />
-            <FormLayout.Group>
+        <Modal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          title={editingRuleId ? "Edit delivery rule" : "Add delivery rule"}
+          primaryAction={{
+            content: editingRuleId ? "Update rule" : "Save rule",
+            onAction: handleSave,
+            loading: isSubmitting,
+          }}
+          secondaryActions={[{ content: "Cancel", onAction: () => setModalOpen(false) }]}
+        >
+          <Modal.Section>
+            <BlockStack gap="400">
+              {actionError && (
+                <Banner title="Rule could not be saved" tone="critical">
+                  <p>{actionError}</p>
+                </Banner>
+              )}
+              <Select
+                label="Country"
+                options={COUNTRIES}
+                value={countryCode}
+                onChange={setCountryCode}
+              />
+              <FormLayout.Group>
+                <TextField
+                  label="Min delivery days"
+                  type="number"
+                  value={minDays}
+                  onChange={setMinDays}
+                  min={0}
+                  autoComplete="off"
+                  helpText="Earliest delivery date after processing."
+                />
+                <TextField
+                  label="Max delivery days"
+                  type="number"
+                  value={maxDays}
+                  onChange={setMaxDays}
+                  min={0}
+                  autoComplete="off"
+                  helpText="Latest delivery date after processing."
+                />
+              </FormLayout.Group>
               <TextField
-                label="Min Delivery Days"
+                label="Processing days"
                 type="number"
-                value={minDays}
-                onChange={setMinDays}
+                value={processingDays}
+                onChange={setProcessingDays}
                 min={0}
                 autoComplete="off"
-                helpText="Minimum days after processing"
+                helpText="Days needed before the order is ready to ship."
               />
               <TextField
-                label="Max Delivery Days"
-                type="number"
-                value={maxDays}
-                onChange={setMaxDays}
-                min={0}
+                label="Storefront message"
+                value={shippingMessage}
+                onChange={setShippingMessage}
                 autoComplete="off"
-                helpText="Maximum days after processing"
+                multiline={2}
+                helpText="Supported placeholders: {order_date}, {ship_date}, {min_date}, {max_date}."
               />
-            </FormLayout.Group>
-            <TextField
-              label="Processing Days"
-              type="number"
-              value={processingDays}
-              onChange={setProcessingDays}
-              min={0}
-              autoComplete="off"
-              helpText="How many days to prepare the order before shipping"
-            />
-            <TextField
-              label="Shipping Message"
-              value={shippingMessage}
-              onChange={setShippingMessage}
-              autoComplete="off"
-              multiline={2}
-              helpText={
-                <span>
-                  Use <code>{"{min_date}"}</code> and <code>{"{max_date}"}</code> as placeholders.
-                  E.g.: "Order today and get it by: {"{min_date}"} - {"{max_date}"}"
-                </span>
-              }
-            />
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Preview</p>
+                <p className="mt-1 text-sm font-medium text-gray-800">
+                  {previewMessage(shippingMessage)}
+                </p>
+              </div>
+            </BlockStack>
+          </Modal.Section>
+        </Modal>
       </div>
     </div>
   );
