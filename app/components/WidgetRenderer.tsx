@@ -4,6 +4,14 @@ import {
   normalizeStepItems,
   normalizeTrustBadges,
 } from "../lib/delivery";
+import {
+  LORDICON_HOVER_STATES,
+  LORDICON_INTRO_STATES,
+  LORDICON_LOOP_STATES,
+  LORDICON_PRESETS,
+  LORDICON_STATES_BY_FILE,
+  LORDICON_URL_PATTERN,
+} from "../lib/lordiconPresets";
 import type { WidgetSettingsProps } from "../lib/delivery";
 import {
   PiAirplaneTiltDuotone,
@@ -29,7 +37,7 @@ import {
   PiWarehouseDuotone,
 } from "react-icons/pi";
 import type { IconType } from "react-icons";
-import { createElement, useEffect, useRef, useState } from "react";
+import { createElement, useEffect } from "react";
 import type { ReactElement, ReactNode } from "react";
 
 export type {
@@ -44,32 +52,8 @@ const hasVerticalConnector = (preset: string) => preset === "vertical";
 
 const LORDICON_SCRIPT_ID = "bp-lordicon-player";
 const LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
-const LORDICON_PRESETS: Record<string, string> = {
-  cart: "https://media.lordicon.com/icons/wired/lineal/146-trolley.li",
-  bag: "https://media.lordicon.com/icons/wired/lineal/2870-shopping-bag.li",
-  package: "https://media.lordicon.com/icons/wired/lineal/108-box.li",
-  box: "https://media.lordicon.com/icons/wired/lineal/108-box.li",
-  truck: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
-  scooter: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
-  plane: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
-  warehouse: "https://media.lordicon.com/icons/wired/lineal/481-shop.li",
-  map_pin: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li",
-  route: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li",
-  home: "https://media.lordicon.com/icons/wired/lineal/63-home.li",
-  shield: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li",
-  check_badge: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li",
-  clock: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li",
-  calendar: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li",
-  rocket: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
-  heart: "https://media.lordicon.com/icons/wired/lineal/436-love-care.li",
-  store: "https://media.lordicon.com/icons/wired/lineal/481-shop.li",
-  monitor: "https://media.lordicon.com/icons/wired/lineal/1359-online-shopping.li",
-  tag: "https://media.lordicon.com/icons/wired/lineal/289-price-tag.li",
-  sparkles: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
-};
 const LORDICON_TRIGGER_VALUES = new Set(["in", "click", "hover", "loop", "loop-on-hover", "boomerang", "morph", "sequence"]);
 const LORDICON_STROKE_VALUES = new Set(["light", "regular", "bold"]);
-const LORDICON_URL_PATTERN = /^https:\/\/(?:media\.lordicon\.com\/icons\/wired\/(?:lineal|outline|flat|gradient)\/[a-z0-9-]+\.li|cdn\.lordicon\.com\/[a-z0-9-]+\.json)$/i;
 
 const loadLordiconScript = () => {
   if (typeof document === "undefined") return;
@@ -94,17 +78,47 @@ const cleanLordiconState = (value: unknown) => {
 
 const safeLordiconUrl = (settings: Record<string, unknown> = {}, icon?: string) => {
   if (settings.iconAnimation !== "lordicon") return "";
-  const customUrl = String(settings.lordiconUrl || "").trim();
-  if (LORDICON_URL_PATTERN.test(customUrl)) return customUrl;
   const preset = String(settings.lordiconPreset || "auto");
+  if (preset === "custom") {
+    const customUrl = String(settings.lordiconUrl || "").trim();
+    return LORDICON_URL_PATTERN.test(customUrl) ? customUrl : "";
+  }
   if (preset !== "auto" && LORDICON_PRESETS[preset]) return LORDICON_PRESETS[preset];
   const normalizedIcon = String(icon || "").replace(/^lucide:/, "").replace(/-/g, "_");
-  return LORDICON_PRESETS[normalizedIcon] || LORDICON_PRESETS.package;
+  return LORDICON_PRESETS[normalizedIcon] || "";
+};
+
+const safeLordiconStateForTrigger = (
+  settings: Record<string, unknown> = {},
+  icon: string | undefined,
+  trigger: string,
+) => {
+  const explicitState = cleanLordiconState(settings.lordiconState);
+  if (explicitState) return explicitState;
+
+  const stateType = trigger === "in" ? "intro" : trigger === "loop" ? "loop" : "hover";
+  const preset = String(settings.lordiconPreset || "auto");
+
+  if (preset === "custom") {
+    const customUrl = String(settings.lordiconUrl || "").trim();
+    const localMatch = /^\/icons\/animated\/([a-z0-9-]+)\.json$/i.exec(customUrl);
+    const states = localMatch ? LORDICON_STATES_BY_FILE[localMatch[1]] : undefined;
+    return states?.[stateType] || states?.hover || "";
+  }
+
+  const normalizedIcon = preset !== "auto"
+    ? preset
+    : String(icon || "").replace(/^lucide:/, "").replace(/-/g, "_");
+
+  if (stateType === "intro") return LORDICON_INTRO_STATES[normalizedIcon] || "";
+  if (stateType === "loop") return LORDICON_LOOP_STATES[normalizedIcon] || LORDICON_HOVER_STATES[normalizedIcon] || "";
+  return LORDICON_HOVER_STATES[normalizedIcon] || "";
 };
 
 const safeLordiconTrigger = (value: unknown) => {
-  const trigger = String(value || "loop-on-hover");
-  return LORDICON_TRIGGER_VALUES.has(trigger) ? trigger : "loop-on-hover";
+  const trigger = String(value || "loop");
+  if (trigger === "loop-on-hover") return "loop";
+  return LORDICON_TRIGGER_VALUES.has(trigger) ? trigger : "loop";
 };
 
 const safeLordiconStroke = (value: unknown) => {
@@ -163,21 +177,11 @@ const LordiconLayer = ({
   size: number;
   children: ReactNode;
 }) => {
-  const ref = useRef<HTMLElement | null>(null);
-  const [ready, setReady] = useState(false);
   const src = safeLordiconUrl(settings, icon);
 
   useEffect(() => {
     if (!src) return;
     loadLordiconScript();
-  }, [src]);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return undefined;
-    const handleReady = () => setReady(true);
-    node.addEventListener("ready", handleReady);
-    return () => node.removeEventListener("ready", handleReady);
   }, [src]);
 
   if (!src) return <>{children}</>;
@@ -186,13 +190,11 @@ const LordiconLayer = ({
   const secondary = String(settings?.lordiconSecondaryColor || primary);
   const trigger = safeLordiconTrigger(settings?.lordiconTrigger);
   const stroke = safeLordiconStroke(settings?.lordiconStroke);
-  const state = cleanLordiconState(settings?.lordiconState);
+  const state = safeLordiconStateForTrigger(settings, icon, trigger);
   const speed = clampNumber(settings?.lordiconSpeed, 1, 0.25, 3);
   const displaySize = clampNumber(settings?.lordiconSize, size, 8, 128);
-  const keepStatic = settings?.lordiconKeepStatic === true;
 
   const lordiconProps: Record<string, unknown> = {
-    ref,
     src,
     trigger,
     stroke,
@@ -206,10 +208,9 @@ const LordiconLayer = ({
 
   return (
     <span
-      className={`bp-icon-stack ${ready ? "bp-lordicon-ready" : ""} ${keepStatic ? "bp-icon-keep-static" : ""}`}
+      className="bp-icon-stack"
       style={{ width: displaySize, height: displaySize }}
     >
-      <span className="bp-icon-static">{children}</span>
       {createElement("lord-icon" as any, lordiconProps)}
     </span>
   );

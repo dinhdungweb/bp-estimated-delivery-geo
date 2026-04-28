@@ -3,6 +3,7 @@ import { Modal, Tabs, TextField, Icon, Button, Box } from "@shopify/polaris";
 import { SearchIcon, CheckCircleIcon } from "@shopify/polaris-icons";
 
 import { IconList } from "./WidgetRenderer";
+import { ANIMATED_ICONS } from "../lib/lordiconPresets";
 
 const PREMIUM_VECTOR_ICONS = [
   { id: "bag", category: "premium", name: "Premium Order Bag" },
@@ -104,22 +105,6 @@ const ICONS_COLLECTION = [
 const LORDICON_SCRIPT_ID = "bp-lordicon-player";
 const LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
 
-const ANIMATED_ICONS = [
-  { id: "cart", name: "Shopping Cart", src: "https://media.lordicon.com/icons/wired/lineal/146-trolley.li" },
-  { id: "bag", name: "Shopping Bag", src: "https://media.lordicon.com/icons/wired/lineal/2870-shopping-bag.li" },
-  { id: "package", name: "Package Box", src: "https://media.lordicon.com/icons/wired/lineal/108-box.li" },
-  { id: "truck", name: "Delivery Truck", src: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li" },
-  { id: "map_pin", name: "Location Pin", src: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li" },
-  { id: "home", name: "Home Delivery", src: "https://media.lordicon.com/icons/wired/lineal/63-home.li" },
-  { id: "clock", name: "Cutoff Timer", src: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li" },
-  { id: "rocket", name: "Express Dispatch", src: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li" },
-  { id: "shield", name: "Protected", src: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li" },
-  { id: "heart", name: "Care Promise", src: "https://media.lordicon.com/icons/wired/lineal/436-love-care.li" },
-  { id: "store", name: "Store Pickup", src: "https://media.lordicon.com/icons/wired/lineal/481-shop.li" },
-  { id: "monitor", name: "Online Order", src: "https://media.lordicon.com/icons/wired/lineal/1359-online-shopping.li" },
-  { id: "tag", name: "Promo Tag", src: "https://media.lordicon.com/icons/wired/lineal/289-price-tag.li" },
-];
-
 const loadLordiconScript = () => {
   if (typeof document === "undefined") return;
   if (document.getElementById(LORDICON_SCRIPT_ID)) return;
@@ -135,14 +120,24 @@ const LordiconPreview = ({ src, size = 48 }: { src: string; size?: number }) => 
     loadLordiconScript();
   }, []);
 
-  return createElement("lord-icon" as any, {
-    src,
-    trigger: "loop",
-    stroke: "regular",
-    loading: "lazy",
-    colors: "primary:#111827,secondary:#64748b",
-    style: { width: `${size}px`, height: `${size}px` },
-  });
+  return (
+    <span
+      className="relative inline-flex items-center justify-center"
+      style={{ width: size, height: size, lineHeight: 0 }}
+    >
+      {createElement("lord-icon" as any, {
+        src,
+        trigger: "loop",
+        stroke: "regular",
+        loading: "lazy",
+        colors: "primary:#111827,secondary:#64748b",
+        style: {
+          width: `${size}px`,
+          height: `${size}px`,
+        },
+      })}
+    </span>
+  );
 };
 
 const IconPreview = ({ id, color = "#000", size = 32, className = "" }: { id: string, color?: string, size?: number, className?: string }) => {
@@ -168,8 +163,13 @@ const IconPreview = ({ id, color = "#000", size = 32, className = "" }: { id: st
 export interface IconLibraryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (iconId: string) => void;
+  onSelect: (selection: IconLibrarySelection) => void;
   currentIcon?: string;
+}
+
+export interface IconLibrarySelection {
+  iconId: string;
+  animated: boolean;
 }
 
 export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: IconLibraryModalProps) {
@@ -194,7 +194,10 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
   });
 
   const handleApply = () => {
-    onSelect(tempSelected);
+    onSelect({
+      iconId: tempSelected,
+      animated: Boolean(selectedAnimatedIcon),
+    });
     onClose();
   };
 

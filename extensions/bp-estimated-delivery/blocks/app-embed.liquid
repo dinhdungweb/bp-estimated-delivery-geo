@@ -68,6 +68,23 @@
 </div>
 
 {{ 'bp-delivery.css' | asset_url | stylesheet_tag }}
+<script>
+  window.__bpDeliveryLordiconAssets = {
+    "cart": "{{ 'bp-lordicon-cart.json' | asset_url }}",
+    "shopping-bag": "{{ 'bp-lordicon-shopping-bag.json' | asset_url }}",
+    "package-box": "{{ 'bp-lordicon-package-box.json' | asset_url }}",
+    "delivery-truck": "{{ 'bp-lordicon-delivery-truck.json' | asset_url }}",
+    "location-pin": "{{ 'bp-lordicon-location-pin.json' | asset_url }}",
+    "home-delivery": "{{ 'bp-lordicon-home-delivery.json' | asset_url }}",
+    "cutoff-timer": "{{ 'bp-lordicon-cutoff-timer.json' | asset_url }}",
+    "express-dispatch": "{{ 'bp-lordicon-express-dispatch.json' | asset_url }}",
+    "protected": "{{ 'bp-lordicon-protected.json' | asset_url }}",
+    "care-promise": "{{ 'bp-lordicon-care-promise.json' | asset_url }}",
+    "store-pickup": "{{ 'bp-lordicon-store-pickup.json' | asset_url }}",
+    "online-order": "{{ 'bp-lordicon-online-order.json' | asset_url }}",
+    "promo-tag": "{{ 'bp-lordicon-promo-tag.json' | asset_url }}"
+  };
+</script>
 <script src="{{ 'bp-delivery-embed.js' | asset_url }}" defer></script>
 
 {% endif %}

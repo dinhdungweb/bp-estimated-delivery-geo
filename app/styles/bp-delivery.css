@@ -489,38 +489,17 @@
 
 .bp-icon-stack {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
   flex: 0 0 auto;
   line-height: 0;
-}
-
-.bp-icon-stack .bp-icon-static,
-.bp-icon-stack .bp-lordicon {
-  position: absolute;
-  inset: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.bp-icon-stack .bp-icon-static {
-  transition: opacity 160ms ease;
-}
-
-.bp-icon-stack.bp-lordicon-ready:not(.bp-icon-keep-static) .bp-icon-static {
-  opacity: 0;
-}
-
-.bp-icon-stack.bp-icon-keep-static .bp-icon-static {
-  opacity: 0.24;
+  overflow: hidden;
+  vertical-align: middle;
 }
 
 .bp-icon-stack .bp-lordicon {
+  display: block;
   width: 100%;
   height: 100%;
-  z-index: 1;
 }
 
 .bp-timeline-item:hover .bp-timeline-dot {

@@ -44,32 +44,111 @@
   var LORDICON_SCRIPT_ID = "bp-lordicon-player";
   var LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
   var LORDICON_PRESETS = {
-    cart: "https://media.lordicon.com/icons/wired/lineal/146-trolley.li",
-    bag: "https://media.lordicon.com/icons/wired/lineal/2870-shopping-bag.li",
-    package: "https://media.lordicon.com/icons/wired/lineal/108-box.li",
-    box: "https://media.lordicon.com/icons/wired/lineal/108-box.li",
-    truck: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
-    truck_mini: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
-    scooter: "https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li",
-    plane: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
-    warehouse: "https://media.lordicon.com/icons/wired/lineal/481-shop.li",
-    map_pin: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li",
-    route: "https://media.lordicon.com/icons/wired/lineal/53-location-pin-on-round-map.li",
-    home: "https://media.lordicon.com/icons/wired/lineal/63-home.li",
-    shield: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li",
-    check_badge: "https://media.lordicon.com/icons/wired/lineal/955-shield-security.li",
-    clock: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li",
-    calendar: "https://media.lordicon.com/icons/wired/lineal/1046-clock-time.li",
-    rocket: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li",
-    heart: "https://media.lordicon.com/icons/wired/lineal/436-love-care.li",
-    store: "https://media.lordicon.com/icons/wired/lineal/481-shop.li",
-    monitor: "https://media.lordicon.com/icons/wired/lineal/1359-online-shopping.li",
-    tag: "https://media.lordicon.com/icons/wired/lineal/289-price-tag.li",
-    sparkles: "https://media.lordicon.com/icons/wired/lineal/489-rocket-space.li"
+    cart: "cart",
+    bag: "shopping-bag",
+    package: "package-box",
+    box: "package-box",
+    truck: "delivery-truck",
+    truck_mini: "delivery-truck",
+    scooter: "delivery-truck",
+    plane: "express-dispatch",
+    warehouse: "store-pickup",
+    map_pin: "location-pin",
+    route: "location-pin",
+    home: "home-delivery",
+    shield: "protected",
+    check_badge: "protected",
+    clock: "cutoff-timer",
+    calendar: "cutoff-timer",
+    rocket: "express-dispatch",
+    heart: "care-promise",
+    store: "store-pickup",
+    monitor: "online-order",
+    tag: "promo-tag",
+    sparkles: "express-dispatch"
+  };
+  var LORDICON_HOVER_STATES = {
+    cart: "hover-jump",
+    bag: "hover-pinch",
+    package: "hover-squeeze",
+    box: "hover-squeeze",
+    truck: "hover-pinch",
+    truck_mini: "hover-pinch",
+    scooter: "hover-pinch",
+    plane: "hover-flying",
+    warehouse: "hover-pinch",
+    map_pin: "hover-jump",
+    route: "hover-jump",
+    home: "hover-3d-roll",
+    shield: "hover-click",
+    check_badge: "hover-click",
+    clock: "hover-pinch",
+    calendar: "hover-pinch",
+    rocket: "hover-flying",
+    heart: "hover-pinch",
+    store: "hover-pinch",
+    monitor: "hover-popup",
+    tag: "hover-pinch",
+    sparkles: "hover-flying"
+  };
+  var LORDICON_INTRO_STATES = {
+    cart: "in-reveal",
+    bag: "in-reveal",
+    package: "in-reveal",
+    box: "in-reveal",
+    truck: "in-reveal",
+    truck_mini: "in-reveal",
+    scooter: "in-reveal",
+    plane: "in-flying",
+    warehouse: "in-reveal",
+    map_pin: "in-jump",
+    route: "in-jump",
+    home: "in-reveal",
+    shield: "in-reveal",
+    check_badge: "in-reveal",
+    clock: "in-reveal",
+    calendar: "in-reveal",
+    rocket: "in-flying",
+    heart: "in-reveal",
+    store: "in-reveal",
+    monitor: "in-reveal",
+    tag: "in-reveal",
+    sparkles: "in-flying"
+  };
+  var LORDICON_LOOP_STATES = {
+    bag: "loop-cycle",
+    truck: "loop-cycle",
+    truck_mini: "loop-cycle",
+    scooter: "loop-cycle",
+    plane: "loop-flying",
+    map_pin: "loop-roll",
+    route: "loop-roll",
+    home: "loop-3d-roll",
+    clock: "loop-cycle",
+    calendar: "loop-cycle",
+    rocket: "loop-flying",
+    heart: "loop-cycle",
+    sparkles: "loop-flying"
+  };
+  var LORDICON_STATES_BY_FILE = {
+    "cart": { hover: "hover-jump", intro: "in-reveal" },
+    "shopping-bag": { hover: "hover-pinch", intro: "in-reveal", loop: "loop-cycle" },
+    "package-box": { hover: "hover-squeeze", intro: "in-reveal" },
+    "delivery-truck": { hover: "hover-pinch", intro: "in-reveal", loop: "loop-cycle" },
+    "location-pin": { hover: "hover-jump", intro: "in-jump", loop: "loop-roll" },
+    "home-delivery": { hover: "hover-3d-roll", intro: "in-reveal", loop: "loop-3d-roll" },
+    "cutoff-timer": { hover: "hover-pinch", intro: "in-reveal", loop: "loop-cycle" },
+    "express-dispatch": { hover: "hover-flying", intro: "in-flying", loop: "loop-flying" },
+    "protected": { hover: "hover-click", intro: "in-reveal" },
+    "care-promise": { hover: "hover-pinch", intro: "in-reveal", loop: "loop-cycle" },
+    "store-pickup": { hover: "hover-pinch", intro: "in-reveal" },
+    "online-order": { hover: "hover-popup", intro: "in-reveal" },
+    "promo-tag": { hover: "hover-pinch", intro: "in-reveal" }
   };
   var LORDICON_TRIGGERS = { in: true, click: true, hover: true, loop: true, "loop-on-hover": true, boomerang: true, morph: true, sequence: true };
   var LORDICON_STROKES = { light: true, regular: true, bold: true };
-  var LORDICON_URL = /^https:\/\/(?:media\.lordicon\.com\/icons\/wired\/(?:lineal|outline|flat|gradient)\/[a-z0-9-]+\.li|cdn\.lordicon\.com\/[a-z0-9-]+\.json)$/i;
+  var LORDICON_CDN_URL = /^https:\/\/cdn\.lordicon\.com\/[a-z0-9-]+\.json$/i;
+  var LORDICON_LOCAL_PATH = /^\/icons\/animated\/([a-z0-9-]+)\.json$/i;
 
   var BLOCK_TYPES = {
     header: true,
@@ -431,15 +510,55 @@
     return /^[a-z0-9_-]{1,48}$/i.test(state) ? state : "";
   }
 
+  function defaultLordiconState(settings, icon, trigger) {
+    var explicitState = lordiconState(settings && settings.lordiconState);
+    if (explicitState) return explicitState;
+
+    var stateType = trigger === "in" ? "intro" : trigger === "loop" ? "loop" : "hover";
+    var preset = text(settings && settings.lordiconPreset, "auto");
+    if (preset === "custom") {
+      var customUrl = text(settings && settings.lordiconUrl, "").trim();
+      var localMatch = LORDICON_LOCAL_PATH.exec(customUrl);
+      var states = localMatch ? LORDICON_STATES_BY_FILE[localMatch[1]] : null;
+      return states ? states[stateType] || states.hover || "" : "";
+    }
+
+    var normalized = preset !== "auto" ? preset : iconName(icon);
+    if (stateType === "intro") return LORDICON_INTRO_STATES[normalized] || "";
+    if (stateType === "loop") return LORDICON_LOOP_STATES[normalized] || LORDICON_HOVER_STATES[normalized] || "";
+    return LORDICON_HOVER_STATES[normalized] || "";
+  }
+
+  function lordiconAsset(fileKey) {
+    var assets = window.__bpDeliveryLordiconAssets || {};
+    return assets[fileKey] || "";
+  }
+
+  function lordiconPresetSource(preset) {
+    var fileKey = LORDICON_PRESETS[preset];
+    return fileKey ? lordiconAsset(fileKey) : "";
+  }
+
   function lordiconSource(settings, icon) {
     settings = settings || {};
     if (settings.iconAnimation !== "lordicon") return "";
-    var customUrl = text(settings.lordiconUrl, "").trim();
-    if (LORDICON_URL.test(customUrl)) return customUrl;
     var preset = text(settings.lordiconPreset, "auto");
-    if (preset !== "auto" && LORDICON_PRESETS[preset]) return LORDICON_PRESETS[preset];
+    if (preset === "custom") {
+      var customUrl = text(settings.lordiconUrl, "").trim();
+      if (LORDICON_CDN_URL.test(customUrl)) return customUrl;
+      var localMatch = LORDICON_LOCAL_PATH.exec(customUrl);
+      if (localMatch) {
+        var customAsset = lordiconAsset(localMatch[1]);
+        if (customAsset) return customAsset;
+      }
+      return "";
+    }
+    if (preset !== "auto") {
+      var presetSource = lordiconPresetSource(preset);
+      if (presetSource) return presetSource;
+    }
     var normalized = iconName(icon);
-    return LORDICON_PRESETS[normalized] || LORDICON_PRESETS.package;
+    return lordiconPresetSource(normalized);
   }
 
   function appendLordicon(wrapper, settings, icon, iconColor, size) {
@@ -451,23 +570,21 @@
     wrapper.className += " bp-icon-stack";
     wrapper.style.width = displaySize + "px";
     wrapper.style.height = displaySize + "px";
-    if (settings.lordiconKeepStatic === true) wrapper.className += " bp-icon-keep-static";
 
     var lordIcon = document.createElement("lord-icon");
     lordIcon.className = "bp-lordicon";
     lordIcon.setAttribute("src", src);
-    lordIcon.setAttribute("trigger", option(settings.lordiconTrigger, LORDICON_TRIGGERS, "loop-on-hover"));
+    var trigger = option(settings.lordiconTrigger, LORDICON_TRIGGERS, "loop");
+    if (trigger === "loop-on-hover") trigger = "loop";
+    lordIcon.setAttribute("trigger", trigger);
     lordIcon.setAttribute("stroke", option(settings.lordiconStroke, LORDICON_STROKES, "regular"));
     lordIcon.setAttribute("loading", "lazy");
     lordIcon.setAttribute("speed", String(number(settings.lordiconSpeed, 1, 0.25, 3)));
     lordIcon.setAttribute("colors", "primary:" + color(settings.lordiconPrimaryColor, iconColor) + ",secondary:" + color(settings.lordiconSecondaryColor, iconColor));
     lordIcon.style.width = displaySize + "px";
     lordIcon.style.height = displaySize + "px";
-    var state = lordiconState(settings.lordiconState);
+    var state = defaultLordiconState(settings, icon, trigger);
     if (state) lordIcon.setAttribute("state", state);
-    lordIcon.addEventListener("ready", function () {
-      wrapper.className += " bp-lordicon-ready";
-    });
     wrapper.appendChild(lordIcon);
     return true;
   }
@@ -481,6 +598,7 @@
     var staticWrap = el("span", "bp-icon-static");
 
     if (ICON_PATH.test(safeName)) {
+      if (appendLordicon(wrapper, animationSettings, id, color(iconColor, "#3b82f6"), safeSize)) return wrapper;
       var img = document.createElement("img");
       img.src = safeName;
       img.alt = "";
@@ -491,13 +609,12 @@
       img.style.objectFit = "contain";
       staticWrap.appendChild(img);
       wrapper.appendChild(staticWrap);
-      appendLordicon(wrapper, animationSettings, id, color(iconColor, "#3b82f6"), safeSize);
       return wrapper;
     }
 
+    if (appendLordicon(wrapper, animationSettings, safeName, color(iconColor, "#3b82f6"), safeSize)) return wrapper;
     staticWrap.innerHTML = IconList[safeName]("currentColor", safeSize);
     wrapper.appendChild(staticWrap);
-    appendLordicon(wrapper, animationSettings, safeName, color(iconColor, "#3b82f6"), safeSize);
     return wrapper;
   }
 

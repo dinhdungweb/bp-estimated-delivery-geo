@@ -39,6 +39,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
 import { IconLibraryModal } from "../components/IconLibraryModal";
+import type { IconLibrarySelection } from "../components/IconLibraryModal";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import {
   buildFallbackBlocks,
@@ -223,12 +224,14 @@ const lordiconPresetOptions = [
   { label: "Rocket", value: "rocket" },
   { label: "Heart", value: "heart" },
   { label: "Store", value: "store" },
+  { label: "Online order", value: "monitor" },
+  { label: "Promo tag", value: "tag" },
   { label: "Custom URL", value: "custom" },
 ];
 
 const lordiconTriggerOptions = [
-  { label: "Loop on hover", value: "loop-on-hover" },
   { label: "Loop", value: "loop" },
+  { label: "Loop on hover", value: "loop-on-hover" },
   { label: "Hover", value: "hover" },
   { label: "Click", value: "click" },
   { label: "Intro", value: "in" },
@@ -532,7 +535,9 @@ export default function VisualBuilderStudio() {
   };
 
   const updateBlockSettings = (id: string, newSettings: any) => {
-    setBlocks(blocks.map(b => b.id === id ? { ...b, settings: { ...b.settings, ...newSettings } } : b));
+    setBlocks((currentBlocks) =>
+      currentBlocks.map(b => b.id === id ? { ...b, settings: { ...b.settings, ...newSettings } } : b),
+    );
   };
 
   const getBlockSettings = (blockId: string) =>
@@ -1159,7 +1164,7 @@ export default function VisualBuilderStudio() {
       updateBlockSettings(id, {
         iconAnimation: "lordicon",
         lordiconPreset: s.lordiconPreset || "auto",
-        lordiconTrigger: s.lordiconTrigger || "loop-on-hover",
+        lordiconTrigger: s.lordiconTrigger || "loop",
         lordiconStroke: s.lordiconStroke || "regular",
         lordiconSpeed: Number(s.lordiconSpeed ?? 1),
         lordiconSize: Number(s.lordiconSize ?? s.iconSize ?? 32),
@@ -1196,12 +1201,12 @@ export default function VisualBuilderStudio() {
             />
             {s.lordiconPreset === "custom" && (
               <TextField
-                label="Lordicon JSON / LI URL"
+                label="Lordicon JSON URL"
                 value={s.lordiconUrl || ""}
                 onChange={(v) => updateBlockSettings(id, { lordiconUrl: v })}
                 autoComplete="off"
-                placeholder="https://media.lordicon.com/icons/wired/lineal/497-truck-delivery.li"
-                helpText="Allowed: media.lordicon.com wired .li or cdn.lordicon.com .json"
+                placeholder="/icons/animated/delivery-truck.json"
+                helpText="Allowed: local /icons/animated/*.json or https://cdn.lordicon.com/*.json"
               />
             )}
 
@@ -1210,7 +1215,7 @@ export default function VisualBuilderStudio() {
                 <Select
                   label="Trigger"
                   options={lordiconTriggerOptions}
-                  value={s.lordiconTrigger || "loop-on-hover"}
+                  value={s.lordiconTrigger === "loop-on-hover" ? "loop" : s.lordiconTrigger || "loop"}
                   onChange={(v) => updateBlockSettings(id, { lordiconTrigger: v })}
                 />
               </div>
@@ -1460,18 +1465,35 @@ export default function VisualBuilderStudio() {
       <IconLibraryModal 
         isOpen={iconPickerTarget.open}
         onClose={() => setIconPickerTarget({ open: false })}
-        onSelect={(icon: any) => {
+        onSelect={(selection: IconLibrarySelection) => {
            if (iconPickerTarget.blockId) {
              const field = iconPickerTarget.field || 'icon';
+             const blockSettings = getBlockSettings(iconPickerTarget.blockId);
              if (field.startsWith("stepItem:")) {
-               updateStepItem(iconPickerTarget.blockId, field.slice("stepItem:".length), { icon });
+               updateStepItem(iconPickerTarget.blockId, field.slice("stepItem:".length), { icon: selection.iconId });
              } else if (field.startsWith("trustBadge:")) {
-               updateTrustBadge(iconPickerTarget.blockId, field.slice("trustBadge:".length), { icon });
+               updateTrustBadge(iconPickerTarget.blockId, field.slice("trustBadge:".length), { icon: selection.iconId });
              } else if (field.startsWith("policyItem:")) {
-               updatePolicyItem(iconPickerTarget.blockId, field.slice("policyItem:".length), { icon });
+               updatePolicyItem(iconPickerTarget.blockId, field.slice("policyItem:".length), { icon: selection.iconId });
              } else {
-               updateBlockSettings(iconPickerTarget.blockId, { [field]: icon });
+               updateBlockSettings(iconPickerTarget.blockId, { [field]: selection.iconId });
              }
+
+             updateBlockSettings(iconPickerTarget.blockId, selection.animated
+               ? {
+                   iconAnimation: "lordicon",
+                   lordiconPreset: "auto",
+                   lordiconUrl: "",
+                   lordiconState: "",
+                   lordiconKeepStatic: false,
+                   lordiconTrigger: "loop",
+                   lordiconStroke: blockSettings.lordiconStroke || "regular",
+                   lordiconSpeed: Number(blockSettings.lordiconSpeed ?? 1),
+                   lordiconSize: Number(blockSettings.lordiconSize ?? blockSettings.iconSize ?? 32),
+                   lordiconPrimaryColor: blockSettings.lordiconPrimaryColor || iconColor,
+                   lordiconSecondaryColor: blockSettings.lordiconSecondaryColor || textColor,
+                 }
+               : { iconAnimation: "none" });
            }
            setIconPickerTarget({ open: false });
         }}
