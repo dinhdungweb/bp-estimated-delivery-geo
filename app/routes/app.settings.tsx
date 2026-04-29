@@ -88,7 +88,10 @@ const CollapsibleCard = ({ title, badge, children, defaultOpen = false }: any) =
 // ─── Loader (Fetch Default Widget & Settings) ────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
   const shop = session.shop;
+  const templateApplied = url.searchParams.get("templateApplied") === "1";
+  const sourceDesignId = url.searchParams.get("sourceDesignId") || "";
 
   const [widgets, appSetting] = await Promise.all([
     prisma.widget.findMany({
@@ -112,10 +115,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           ) as unknown as Prisma.InputJsonValue,
         },
       });
-      return routerData({ defaultWidget, appSetting, shop });
+      return routerData({ defaultWidget, appSetting, shop, templateApplied, sourceDesignId });
   }
 
-  return routerData({ defaultWidget: widgets[0], appSetting, shop });
+  return routerData({ defaultWidget: widgets[0], appSetting, shop, templateApplied, sourceDesignId });
 };
 
 // ─── Action (Updates) ────────────────────────────────────────────────────────
@@ -150,7 +153,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 // ─── Main Component (Premium UI) ─────────────────────────────────────────────
 export default function SettingsPage() {
-  const { defaultWidget, appSetting, shop } = useLoaderData<typeof loader>();
+  const { defaultWidget, appSetting, shop, templateApplied, sourceDesignId } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -183,16 +186,16 @@ export default function SettingsPage() {
                <Text variant="bodySm" tone="subdued" as="p">System active on your storefront</Text>
             </div>
          </div>
-         <div className="flex items-center gap-3">
+         <div className="flex flex-wrap items-center gap-3">
             <button 
               onClick={() => navigate("/app/widgets")}
-              className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-900 text-gray-900 px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm"
+              className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-900 shadow-sm transition-all hover:border-gray-900"
             >
               <div className="w-4 h-4 text-gray-500"><Icon source={LayoutColumns2Icon} /></div> All Widgets
             </button>
             <button 
               onClick={() => navigate("/app/widgets/new")}
-              className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md active:scale-95"
+              className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black active:scale-95"
             >
               <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div> Build New
             </button>
@@ -203,28 +206,85 @@ export default function SettingsPage() {
         {/* LEFT COLUMN: MAIN CONFIGURATION */}
         <div className="flex-1 space-y-6">
             {/* 1. ACTIVATE APP CARD */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-1 flex items-center shadow-sm overflow-hidden">
-               <div className={`w-2 self-stretch ${isEnabled ? 'bg-green-500' : 'bg-amber-500'}`} />
-               <div className="flex-1 p-5 flex items-center justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-bold text-gray-800">Global Activation</h2>
-                      <Badge tone={isEnabled ? 'success' : 'attention'}>{isEnabled ? "Live" : "Disabled"}</Badge>
-                    </div>
-                    <p className="text-xs text-gray-400">Main switch to enable or disable the app on your store.</p>
-                  </div>
-                  <button 
-                     onClick={() => {
-                        const newStatus = !isEnabled;
-                        setIsEnabled(newStatus);
-                        handleSaveQuick(isActive, newStatus);
-                     }}
-                     disabled={isSubmitting}
-                     className={`px-6 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${isEnabled ? 'bg-gray-50 text-gray-600 hover:bg-gray-100' : 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-100'} ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            <div
+              className={`relative overflow-hidden rounded-2xl border bg-white shadow-sm ${
+                isEnabled ? "border-green-200" : "border-amber-200"
+              }`}
+            >
+              <div
+                className={`absolute inset-y-0 left-0 w-1.5 ${
+                  isEnabled ? "bg-green-500" : "bg-amber-500"
+                }`}
+              />
+              <div className="flex flex-col gap-4 p-5 pl-6 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-4">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                      isEnabled
+                        ? "bg-green-50 text-green-700"
+                        : "bg-amber-50 text-amber-700"
+                    }`}
                   >
-                    {isEnabled ? "Turn Off" : "Activate App"}
-                  </button>
-               </div>
+                    <svg
+                      aria-hidden="true"
+                      className="h-5 w-5"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                    >
+                      <path
+                        d="M10 3v6"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M6.3 5.8a6 6 0 1 0 7.4 0"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-base font-bold text-gray-900">Global Activation</h2>
+                      <Badge tone={isEnabled ? "success" : "attention"}>
+                        {isEnabled ? "Live" : "Paused"}
+                      </Badge>
+                    </div>
+                    <p className="max-w-xl text-sm text-gray-500">
+                      {isEnabled
+                        ? "Delivery widget is enabled and can appear on your storefront."
+                        : "Delivery widget is hidden from your storefront until you activate it."}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isEnabled ? "bg-green-500" : "bg-amber-500"
+                        }`}
+                      />
+                      <span>{isEnabled ? "Storefront active" : "Storefront paused"}</span>
+                      <span className="text-gray-300">•</span>
+                      <span>Applies to all active delivery widgets</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newStatus = !isEnabled;
+                    setIsEnabled(newStatus);
+                    handleSaveQuick(isActive, newStatus);
+                  }}
+                  disabled={isSubmitting}
+                  className={`inline-flex h-9 min-w-[112px] items-center justify-center whitespace-nowrap rounded-xl px-3 text-xs font-bold transition-all ${
+                    isEnabled
+                      ? "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      : "bg-green-600 text-white shadow-lg shadow-green-100 hover:bg-green-700"
+                  } ${isSubmitting ? "cursor-not-allowed opacity-50" : ""}`}
+                >
+                  {isSubmitting ? "Saving..." : isEnabled ? "Turn off" : "Activate"}
+                </button>
+              </div>
             </div>
 
             {/* 2. GENERAL ETA MESSAGE (VISUAL EDITOR) */}
@@ -234,16 +294,22 @@ export default function SettingsPage() {
                     <h2 className="text-base font-bold text-gray-800">Visual Experience</h2>
                     <p className="text-xs text-gray-400">Preview and modify your current storefront delivery message.</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button 
                       onClick={() => navigate('/app/templates')}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-[11px] font-bold hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200"
+                      className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-transparent bg-gray-50 px-3 text-xs font-bold text-gray-700 transition-all hover:border-gray-200 hover:bg-gray-100"
                     >
                       <div className="w-4 h-4 text-gray-400"><Icon source={WandIcon} /></div> Templates
                     </button>
                     <button 
-                      onClick={() => navigate(`/app/widgets/${defaultWidget.id}`)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 shadow-md shadow-blue-100 transition-all active:scale-95"
+                      onClick={() => {
+                        const params = new URLSearchParams();
+                        if (templateApplied) params.set("saveAsDesign", "1");
+                        if (sourceDesignId) params.set("sourceDesignId", sourceDesignId);
+                        const query = params.toString();
+                        navigate(`/app/widgets/${defaultWidget.id}${query ? `?${query}` : ""}`);
+                      }}
+                      className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-3 text-xs font-bold text-white shadow-md shadow-blue-100 transition-all hover:bg-blue-700 active:scale-95"
                     >
                       <div className="w-4 h-4 text-white"><Icon source={EditIcon} /></div> Customize
                     </button>
@@ -279,7 +345,7 @@ export default function SettingsPage() {
                </div>
                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                  {['Cut-off time', 'Holidays', 'Visibility', 'Timer', 'Language'].map(label => (
-                   <button key={label} className="px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-[11px] font-bold text-gray-600 hover:border-gray-300 hover:bg-white hover:shadow-sm transition-all active:scale-95 text-center">
+                   <button key={label} className="flex h-9 items-center justify-center rounded-xl border border-gray-100 bg-gray-50 px-3 text-center text-xs font-bold text-gray-600 transition-all hover:border-gray-300 hover:bg-white hover:shadow-sm active:scale-95">
                       {label}
                    </button>
                  ))}
@@ -297,7 +363,7 @@ export default function SettingsPage() {
                         </div>
                         <button 
                           onClick={() => window.open(themeEditorUrl, '_blank')}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-black shadow-lg transition-all"
+                          className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-lg transition-all hover:bg-black"
                         >
                           <div className="w-4 h-4 text-white"><Icon source={ViewIcon} /></div> Open Theme Editor
                         </button>
@@ -305,7 +371,7 @@ export default function SettingsPage() {
                      <div className="p-4 bg-green-50 border border-green-100 rounded-xl">
                         <p className="text-[11px] text-green-800 leading-relaxed font-medium flex items-center gap-2">
                            <div className="w-4 h-4 text-green-600"><Icon source={PlusIcon} /></div>
-                           <span><b>Tip:</b> After opening the editor, add the <b>"Estimated Delivery Date"</b> block to your Product template.</span>
+                           <span><b>Tip:</b> After opening the editor, add the <b>"BP: Estimated Delivery"</b> block to your Product template.</span>
                         </p>
                      </div>
                   </BlockStack>
@@ -352,7 +418,7 @@ export default function SettingsPage() {
                         <div className="h-3 w-1/2 bg-gray-100 rounded-full animate-pulse" />
                      </div>
 
-                     <button className="w-full py-3 bg-gray-900 text-white rounded-xl text-xs font-bold shadow-lg shadow-gray-200 active:scale-95 transition-all">
+                     <button className="flex h-9 w-full items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-lg shadow-gray-200 transition-all active:scale-95">
                         Buy Now • $129.00
                      </button>
 
@@ -376,7 +442,7 @@ export default function SettingsPage() {
                   <div className="w-4 h-4 text-blue-200"><Icon source={QuestionCircleIcon} /></div> Need support?
                </h3>
                <p className="text-[11px] text-blue-100 mb-4 leading-relaxed opacity-80">Our experts can help you with custom styling and shipping logic.</p>
-               <button className="w-full py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg text-xs font-bold transition-all">
+               <button className="flex h-9 w-full items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-bold text-white transition-all hover:bg-white/20">
                   Chat with Designer
                </button>
             </div>

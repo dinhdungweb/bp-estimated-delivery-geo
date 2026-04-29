@@ -1,44 +1,185 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useNavigate } from "react-router";
 import { 
-  Page, 
-  Card, 
   Text, 
-  Button, 
-  Box, 
-  InlineStack, 
   BlockStack, 
   Icon,
-  Banner,
-  Divider,
-  ProgressBar,
   Badge,
 } from "@shopify/polaris";
 import { 
   ChevronRightIcon,
   CheckCircleIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   SettingsIcon,
   CircleChevronRightIcon,
   PlusIcon,
   LayoutColumns2Icon,
-  WandIcon,
   ChatIcon,
   CalendarIcon
 } from "@shopify/polaris-icons";
-import { useState } from "react";
-import { authenticate } from "../shopify.server";
+import { useEffect, useState } from "react";
+import { authenticate, apiVersion } from "../shopify.server";
 import prisma from "../db.server";
 
+type AdminGraphqlClient = {
+  graphql: (
+    query: string,
+    options?: { variables?: Record<string, unknown> },
+  ) => Promise<Response>;
+};
+
+type ShopifyReviewResponse = {
+  success: boolean;
+  code: string;
+  message: string;
+};
+
+type ShopifyAdminGlobal = {
+  reviews?: {
+    request?: () => Promise<ShopifyReviewResponse>;
+  };
+  toast?: {
+    show?: (message: string, options?: { isError?: boolean }) => void;
+  };
+};
+
+type ThemeEmbedStatus = "enabled" | "disabled" | "unknown";
+
+type ThemeEmbedCheck = {
+  status: ThemeEmbedStatus;
+  reason?: string;
+};
+
+type ThemeBlock = {
+  type?: unknown;
+  disabled?: unknown;
+};
+
+const APP_EMBED_TYPE_HINTS = [
+  "bp-estimated-delivery",
+  "bp-delivery",
+  "estimated-delivery",
+];
+
+function restThemeIdFromGraphqlId(themeId: string) {
+  return themeId.match(/(\d+)$/)?.[1] || "";
+}
+
+function isOwnAppEmbedBlock(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const block = value as ThemeBlock;
+  const type = typeof block.type === "string" ? block.type.toLowerCase() : "";
+  if (!type) return false;
+  const looksLikeThisApp = APP_EMBED_TYPE_HINTS.some((hint) => type.includes(hint));
+  const looksLikeEmbedBlock = type.includes("/blocks/app-embed/") || type.includes("app-embed");
+  return looksLikeThisApp && looksLikeEmbedBlock && block.disabled !== true;
+}
+
+async function requestShopifyReviewModal() {
+  const shopify = (window as Window & { shopify?: ShopifyAdminGlobal }).shopify;
+  if (!shopify?.reviews?.request) {
+    shopify?.toast?.show?.("Shopify review prompt is not available yet.", { isError: true });
+    return;
+  }
+
+  try {
+    const result = await shopify.reviews.request();
+    if (!result.success) {
+      shopify.toast?.show?.(result.message || "Shopify review prompt is not available right now.");
+    }
+  } catch {
+    shopify.toast?.show?.("Could not open Shopify review prompt right now.", { isError: true });
+  }
+}
+
+async function getThemeEmbedStatus(
+  admin: AdminGraphqlClient,
+  shop: string,
+  accessToken: string,
+): Promise<ThemeEmbedCheck> {
+  try {
+    if (!accessToken) {
+      return { status: "unknown", reason: "missing_access_token" };
+    }
+
+    const themeResponse = await admin.graphql(`#graphql
+      query MainThemeForAppEmbedCheck {
+        themes(first: 1, roles: [MAIN]) {
+          nodes {
+            id
+          }
+        }
+      }
+    `);
+    const themePayload = (await themeResponse.json()) as {
+      errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+      data?: { themes?: { nodes?: Array<{ id?: string }> } };
+    };
+
+    if (themePayload.errors?.length) {
+      const accessDenied = themePayload.errors.some(
+        (error) => error.extensions?.code === "ACCESS_DENIED",
+      );
+      return {
+        status: "unknown",
+        reason: accessDenied ? "missing_read_themes_scope" : "theme_query_failed",
+      };
+    }
+
+    const themeId = restThemeIdFromGraphqlId(themePayload.data?.themes?.nodes?.[0]?.id || "");
+    if (!themeId) {
+      return { status: "unknown", reason: "main_theme_not_found" };
+    }
+
+    const assetUrl = new URL(
+      `https://${shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json`,
+    );
+    assetUrl.searchParams.set("asset[key]", "config/settings_data.json");
+    assetUrl.searchParams.set("fields", "value");
+
+    const assetResponse = await fetch(assetUrl, {
+      headers: {
+        Accept: "application/json",
+        "X-Shopify-Access-Token": accessToken,
+      },
+    });
+
+    if (!assetResponse.ok) {
+      return {
+        status: "unknown",
+        reason: assetResponse.status === 403 ? "missing_read_themes_scope" : "theme_asset_failed",
+      };
+    }
+
+    const assetPayload = (await assetResponse.json()) as {
+      asset?: { value?: string };
+    };
+    const rawSettings = assetPayload.asset?.value;
+    if (!rawSettings) {
+      return { status: "unknown", reason: "settings_data_missing" };
+    }
+
+    const settings = JSON.parse(rawSettings) as {
+      current?: { blocks?: Record<string, unknown> };
+    };
+    const blocks = settings.current?.blocks || {};
+    return {
+      status: Object.values(blocks).some(isOwnAppEmbedBlock) ? "enabled" : "disabled",
+    };
+  } catch {
+    return { status: "unknown", reason: "theme_check_failed" };
+  }
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const [widget, totalRules, appSetting] = await Promise.all([
+  const [widget, totalRules, appSetting, themeEmbedCheck] = await Promise.all([
     prisma.widget.findFirst({ where: { shop, isDefault: true } }),
     prisma.deliveryRule.count({ where: { shop } }),
-    prisma.appSetting.findUnique({ where: { shop } })
+    prisma.appSetting.findUnique({ where: { shop } }),
+    getThemeEmbedStatus(admin, shop, session.accessToken || ""),
   ]);
 
   return {
@@ -46,14 +187,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     widget,
     totalRules,
     isEnabled: appSetting?.isEnabled ?? false,
-    appSetting
+    appSetting,
+    themeEmbedStatus: themeEmbedCheck.status,
+    themeEmbedCheckReason: themeEmbedCheck.reason || null,
   };
 };
 
 export default function DashboardHome() {
-  const { shop, widget, totalRules, isEnabled } = useLoaderData<typeof loader>();
+  const { shop, widget, totalRules, isEnabled, themeEmbedStatus, themeEmbedCheckReason } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [expandedStep, setExpandedStep] = useState<number | null>(0);
+  const etaConfirmationKey = `bp-eta-confirmed:${shop}`;
+  const [etaConfirmed, setEtaConfirmed] = useState(false);
+
+  useEffect(() => {
+    setEtaConfirmed(window.localStorage.getItem(etaConfirmationKey) === "true");
+  }, [etaConfirmationKey]);
+
+  const handleEtaConfirmed = () => {
+    setEtaConfirmed(true);
+    window.localStorage.setItem(etaConfirmationKey, "true");
+    void requestShopifyReviewModal();
+  };
 
   const steps = [
     {
@@ -62,12 +217,18 @@ export default function DashboardHome() {
       desc: "To start using the app, please enable app embedding by following the steps below.",
       instructions: [
         'Click "Enable embed app" below.',
-        'Find and enable "Estimated Delivery Date" in the theme customizer.',
-        'Click "Save" button & reload app backend page.'
+        'Find and enable "BP: Estimated Delivery" in the theme customizer.',
+        'Click "Save", then return here and refresh the app page.'
       ],
-      buttonText: "Enable embed app",
+      buttonText: themeEmbedStatus === "enabled" ? "Review theme" : "Enable embed app",
       action: () => window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/themes/current/editor?context=apps`, '_blank'),
-      completed: false
+      completed: themeEmbedStatus === "enabled",
+      statusNote:
+        themeEmbedStatus === "unknown"
+          ? `Could not verify theme embed automatically (${themeEmbedCheckReason || "unknown"}). Make sure read_themes is granted and re-authorize the app.`
+          : themeEmbedStatus === "disabled"
+            ? "Theme embed is not enabled in the main theme yet."
+            : "Theme embed is enabled in the main theme."
     },
     {
       id: 1,
@@ -89,19 +250,29 @@ export default function DashboardHome() {
       id: 3,
       title: "Confirm ETA Display",
       desc: "Check your product page to ensure everything looks perfect.",
-      buttonText: "View Store",
+      buttonText: "Yay, It's working 😊",
       action: () => window.open(`https://${shop}`, '_blank'),
-      completed: false
+      completed: etaConfirmed
     }
   ];
 
   const completedCount = steps.filter(s => s.completed).length;
+  const themeEmbedBadgeTone =
+    themeEmbedStatus === "enabled" ? "success" : themeEmbedStatus === "disabled" ? "critical" : "attention";
+  const themeEmbedLabel =
+    themeEmbedStatus === "enabled" ? "Enabled" : themeEmbedStatus === "disabled" ? "Off" : "Needs scope";
+  const themeEmbedDescription =
+    themeEmbedStatus === "enabled"
+      ? "App embed is enabled in the main theme."
+      : themeEmbedStatus === "disabled"
+        ? "App embed is not enabled in the main theme."
+        : "Theme embed status could not be verified.";
 
   return (
-    <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
+      <div className="mx-auto max-w-6xl space-y-4">
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+        <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
            <div className="space-y-1">
               <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Onboarding Dashboard</h1>
               <div className="flex items-center gap-2">
@@ -109,16 +280,18 @@ export default function DashboardHome() {
                  <Text variant="bodySm" tone="subdued" as="p">{isEnabled ? "Widget is active on storefront" : "Action required to go live"}</Text>
               </div>
            </div>
-           <div className="flex items-center gap-3">
+           <div className="flex flex-wrap items-center gap-3">
               <button 
+                type="button"
                 onClick={() => navigate("/app/settings")}
-                className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-900 text-gray-900 px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm"
+                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-900 shadow-sm transition-all hover:border-gray-900"
               >
                 <div className="w-4 h-4 text-gray-500"><Icon source={SettingsIcon} /></div> Settings
               </button>
               <button 
+                type="button"
                 onClick={() => navigate("/app/rules")}
-                className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md active:scale-95"
+                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black"
               >
                 <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div> New Rule
               </button>
@@ -158,12 +331,13 @@ export default function DashboardHome() {
             </div>
 
             <div className="divide-y divide-gray-50">
-               {steps.map((step, idx) => {
+               {steps.map((step) => {
                  const isExpanded = expandedStep === step.id;
                  return (
                    <div key={step.id} className={`transition-all ${isExpanded ? 'bg-blue-50/30' : 'bg-white'}`}>
-                     <div 
-                       className="p-5 cursor-pointer hover:bg-gray-50 flex items-center gap-4 group"
+                     <button
+                       type="button"
+                       className="group flex w-full cursor-pointer items-center gap-4 p-5 text-left hover:bg-gray-50"
                        onClick={() => setExpandedStep(isExpanded ? null : step.id)}
                      >
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${step.completed ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'}`}>
@@ -177,12 +351,27 @@ export default function DashboardHome() {
                         <div className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
                            <Icon source={ChevronDownIcon} />
                         </div>
-                     </div>
+                     </button>
                      
                      {isExpanded && (
                        <div className="px-16 pb-6 animate-in fade-in slide-in-from-top-2 duration-300">
                           <BlockStack gap="400">
-                             <p className="text-xs text-gray-500 leading-relaxed max-w-lg">{step.desc}</p>
+                             {step.desc && (
+                               <p className="max-w-lg text-xs leading-relaxed text-gray-500">{step.desc}</p>
+                             )}
+                             {step.statusNote && (
+                               <p
+                                 className={`max-w-lg rounded-xl border px-3 py-2 text-xs font-medium ${
+                                   step.completed
+                                     ? "border-green-100 bg-green-50 text-green-700"
+                                     : themeEmbedStatus === "unknown"
+                                       ? "border-amber-100 bg-amber-50 text-amber-700"
+                                       : "border-gray-100 bg-gray-50 text-gray-600"
+                                 }`}
+                               >
+                                 {step.statusNote}
+                               </p>
+                             )}
                              {step.instructions && (
                                <div className="space-y-2 p-4 bg-white border border-blue-50 rounded-xl shadow-sm">
                                  {step.instructions.map((inst, i) => (
@@ -193,13 +382,33 @@ export default function DashboardHome() {
                                  ))}
                                </div>
                              )}
-                             <div className="pt-2">
-                               <button 
-                                 onClick={() => step.action()}
-                                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all active:scale-95 shadow-md shadow-blue-50"
-                               >
-                                 {step.buttonText} →
-                               </button>
+                             <div className="flex flex-wrap gap-2 pt-2">
+                               {step.id === 3 ? (
+                                 <>
+                                   <button
+                                     type="button"
+                                     onClick={handleEtaConfirmed}
+                                     className="inline-flex h-9 items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black"
+                                   >
+                                     {step.buttonText}
+                                   </button>
+                                   <a
+                                     href="mailto:support@bluepeaks.top"
+                                     className="inline-flex h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700 shadow-sm transition-all hover:bg-gray-50"
+                                   >
+                                     Contact support
+                                   </a>
+                                 </>
+                               ) : (
+                                 <button
+                                   type="button"
+                                   onClick={() => step.action()}
+                                   className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-bold text-white shadow-md shadow-blue-50 transition-all hover:bg-blue-700"
+                                 >
+                                   {step.buttonText}
+                                   <span className="h-3.5 w-3.5"><Icon source={ChevronRightIcon} /></span>
+                                 </button>
+                               )}
                              </div>
                           </BlockStack>
                        </div>
@@ -215,17 +424,18 @@ export default function DashboardHome() {
                    <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-green-600">
                       <div className="w-6 h-6"><Icon source={CheckCircleIcon} /></div>
                    </div>
-                   <Badge tone={isEnabled ? "success" : "attention"}>{isEnabled ? "Active" : "Inactive"}</Badge>
-                </div>
-                <div className="space-y-1 flex-1">
-                   <h3 className="text-sm font-bold text-gray-800">Theme Embed</h3>
-                   <p className="text-xs text-gray-400">Main application switch in theme editor.</p>
-                </div>
-                <button 
-                  onClick={() => navigate("/app/settings")}
-                  className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-xs font-bold transition-all border border-transparent hover:border-gray-200"
+                    <Badge tone={themeEmbedBadgeTone}>{themeEmbedLabel}</Badge>
+                 </div>
+                 <div className="space-y-1 flex-1">
+                    <h3 className="text-sm font-bold text-gray-800">Theme Embed</h3>
+                    <p className="text-xs text-gray-400">{themeEmbedDescription}</p>
+                 </div>
+                 <button 
+                  type="button"
+                  onClick={() => window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/themes/current/editor?context=apps`, '_blank')}
+                  className="flex h-9 w-full items-center justify-center rounded-xl border border-transparent bg-gray-50 px-3 text-xs font-bold text-gray-700 transition-all hover:border-gray-200 hover:bg-gray-100"
                 >
-                   Manage Setup
+                   Open Editor
                 </button>
              </div>
 
@@ -234,15 +444,16 @@ export default function DashboardHome() {
                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
                       <div className="w-6 h-6"><Icon source={CalendarIcon} /></div>
                    </div>
-                   <Badge tone="info">Live</Badge>
+                    <Badge tone="info">Theme block</Badge>
                 </div>
                 <div className="space-y-1 flex-1">
                    <h3 className="text-sm font-bold text-gray-800">Dynamic Blocks</h3>
                    <p className="text-xs text-gray-400">Position the widget anywhere on product pages.</p>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/themes/current/editor?context=apps`, '_blank')}
-                  className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-xs font-bold transition-all border border-transparent hover:border-gray-200"
+                  className="flex h-9 w-full items-center justify-center rounded-xl border border-transparent bg-gray-50 px-3 text-xs font-bold text-gray-700 transition-all hover:border-gray-200 hover:bg-gray-100"
                 >
                    Open Editor
                 </button>
@@ -260,8 +471,9 @@ export default function DashboardHome() {
                    <p className="text-xs text-gray-400">Manage conditions for different regions/products.</p>
                 </div>
                 <button 
+                   type="button"
                    onClick={() => navigate("/app/rules")}
-                   className="w-full py-2 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-all shadow-md active:scale-95"
+                   className="flex h-9 w-full items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black"
                 >
                    View All Rules
                 </button>
@@ -271,29 +483,33 @@ export default function DashboardHome() {
       </div>
       
       {/* Footer support */}
-      <div className="max-w-4xl mx-auto text-center space-y-6 py-16 border-t border-gray-100 mt-12">
-        <div className="space-y-1">
+      <div className="mx-auto mt-6 max-w-6xl space-y-3 border-t border-gray-100 py-6 text-center">
+        <div className="space-y-0.5">
            <h3 className="text-sm font-bold text-gray-800">Direct Support</h3>
            <p className="text-xs text-gray-400">Our team is available to help you with custom setups.</p>
         </div>
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <a 
             href="mailto:support@bluepeaks.top" 
-            className="inline-flex items-center gap-2 text-xs font-bold text-gray-600 bg-white border border-gray-200 rounded-xl px-4 py-2 hover:bg-gray-50 transition-all shadow-sm"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 shadow-sm transition-all hover:bg-gray-50"
           >
             <div className="w-3.5 h-3.5"><Icon source={ChatIcon} /></div> Email Support
           </a>
-          <a 
-            href="#" 
-            className="inline-flex items-center gap-2 text-xs font-bold text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-2 hover:bg-green-100 transition-all shadow-sm"
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-green-100 bg-green-50 px-3 text-xs font-bold text-green-700 shadow-sm transition-all hover:bg-green-100"
           >
             <div className="w-3.5 h-3.5"><Icon source={ChatIcon} /></div> WhatsApp
-          </a>
-          <button className="inline-flex items-center gap-2 text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2 hover:bg-red-100 transition-all">
+          </button>
+          <button
+            type="button"
+            onClick={() => void requestShopifyReviewModal()}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-xs font-bold text-red-600 transition-all hover:bg-red-100"
+          >
              <div className="w-3.5 h-3.5"><Icon source={CheckCircleIcon} /></div> Leave a Review
           </button>
         </div>
-        <p className="text-[10px] text-gray-300 font-medium uppercase tracking-[0.1em]">© 2025 BluePeaks • All Rights Reserved</p>
+        <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-gray-300">(c) 2025 BluePeaks - All Rights Reserved</p>
       </div>
     </div>
   );

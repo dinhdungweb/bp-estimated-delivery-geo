@@ -38,6 +38,9 @@
 <div id="bp-delivery-embed-content"
      data-shop="{{ shop.permanent_domain }}"
      data-product-id="{{ product.id }}"
+     data-product-title="{{ product.title | escape }}"
+     data-product-price-cents="{{ product.selected_or_first_available_variant.price }}"
+     data-currency-code="{{ cart.currency.iso_code | default: shop.currency }}"
      data-product-tags="{{ product.tags | join: ',' }}"
      style="display:none; margin: 12px 0;">
   <div class="bp-skeleton" id="bp-delivery-embed-skeleton">

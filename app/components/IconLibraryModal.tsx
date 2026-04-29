@@ -3,7 +3,11 @@ import { Modal, Tabs, TextField, Icon, Button, Box } from "@shopify/polaris";
 import { SearchIcon, CheckCircleIcon } from "@shopify/polaris-icons";
 
 import { IconList } from "./WidgetRenderer";
-import { ANIMATED_ICONS } from "../lib/lordiconPresets";
+import {
+  ANIMATED_ICONS,
+  getAnimatedIconByIconId,
+  makeAnimatedIconId,
+} from "../lib/lordiconPresets";
 
 const PREMIUM_VECTOR_ICONS = [
   { id: "bag", category: "premium", name: "Premium Order Bag" },
@@ -177,9 +181,12 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [tempSelected, setTempSelected] = useState(currentIcon || "");
-  const selectedAnimatedIcon = selectedTab === 1
-    ? ANIMATED_ICONS.find((icon) => icon.id === tempSelected)
-    : undefined;
+  const selectedAnimatedIcon = getAnimatedIconByIconId(tempSelected);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setTempSelected(currentIcon || "");
+  }, [currentIcon, isOpen]);
 
   const tabs = [
     { id: "icons", content: "Icons" },
@@ -200,6 +207,19 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
     });
     onClose();
   };
+
+  const selectStaticIcon = (iconId: string) => {
+    setTempSelected(iconId);
+  };
+
+  const selectAnimatedIcon = (fileKey: string) => {
+    setTempSelected(makeAnimatedIconId(fileKey));
+  };
+
+  const iconDisplayName =
+    (selectedAnimatedIcon ? `Animated ${selectedAnimatedIcon.name}` : "") ||
+    ICONS_COLLECTION.find(i => i.id === tempSelected)?.name ||
+    "Icon";
 
   return (
     <Modal
@@ -244,7 +264,7 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
                   {filteredIcons.map(icon => (
                     <div
                       key={icon.id}
-                      onClick={() => setTempSelected(icon.id)}
+                      onClick={() => selectStaticIcon(icon.id)}
                       className={`aspect-square rounded-lg border flex items-center justify-center cursor-pointer transition-colors ${tempSelected === icon.id ? 'border-black bg-gray-50 shadow-sm' : 'border-gray-100 hover:border-gray-300'}`}
                     >
                        <IconPreview id={icon.id} size={28} />
@@ -260,14 +280,14 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
                <div className="grid grid-cols-4 gap-6">
                   {ANIMATED_ICONS.map(icon => (
                     <div
-                      key={icon.id}
-                      onClick={() => setTempSelected(icon.id)}
-                      className={`p-6 rounded-xl border flex flex-col items-center gap-3 cursor-pointer transition-all ${tempSelected === icon.id ? 'border-black bg-gray-50' : 'border-gray-100 hover:border-gray-300'}`}
+                      key={icon.fileKey}
+                      onClick={() => selectAnimatedIcon(icon.fileKey)}
+                      className={`p-6 rounded-xl border flex flex-col items-center gap-3 cursor-pointer transition-all ${tempSelected === makeAnimatedIconId(icon.fileKey) ? 'border-black bg-gray-50' : 'border-gray-100 hover:border-gray-300'}`}
                     >
                        <div className="w-14 h-14 flex items-center justify-center">
                          <LordiconPreview src={icon.src} size={52} />
                        </div>
-                       <span className="text-[10px] text-gray-500">{icon.name}</span>
+                       <span className="text-[10px] text-gray-500">Animated {icon.name}</span>
                     </div>
                   ))}
                </div>
@@ -309,9 +329,13 @@ export function IconLibraryModal({ isOpen, onClose, onSelect, currentIcon }: Ico
              )}
            </div>
            
-           <div className="text-center">
-              <p className="font-bold text-gray-900">{tempSelected ? (selectedAnimatedIcon?.name || ICONS_COLLECTION.find(i => i.id === tempSelected)?.name || "Animated Icon") : "Select an icon"}</p>
-              <p className="text-xs text-gray-500 mt-1">This will be applied to your selected step.</p>
+           <div className="w-full text-center space-y-4">
+              <div>
+                <p className="font-bold text-gray-900">{tempSelected ? iconDisplayName : "Select an icon"}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedAnimatedIcon ? "This is a separate animated icon." : "This is a static icon."}
+                </p>
+              </div>
            </div>
 
            <div className="w-full mt-auto">

@@ -1,13 +1,8 @@
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
-import { useLoaderData, useSubmit, useNavigate, data as routerData } from "react-router";
-import { 
-  PlusIcon, 
-  EditIcon, 
-  DuplicateIcon,
-  DeleteIcon
-} from "@shopify/polaris-icons";
+import { useLoaderData, useNavigate, useSubmit, data as routerData } from "react-router";
 import { Icon } from "@shopify/polaris";
+import { DeleteIcon, EditIcon, PlusIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { buildFallbackBlocks, DEFAULT_SHIPPING_MESSAGE } from "../lib/delivery";
@@ -58,64 +53,86 @@ export default function WidgetListPage() {
   const submit = useSubmit();
 
   return (
-    <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 space-y-6 font-sans">
-      <div className="flex items-center justify-between">
-         <div className="space-y-1">
-            <h1 className="text-xl font-bold text-gray-900">Widgets</h1>
-            <p className="text-xs text-gray-400">Manage your delivery estimation widgets.</p>
-         </div>
-         <button 
-           onClick={() => submit({ intent: "create" }, { method: "post" })}
-           className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2"
-         >
-           <span>➕</span> Add Widget
-         </button>
-      </div>
+    <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Widgets</h1>
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-blue-500" />
+              <p className="text-sm text-gray-500">Manage your delivery estimation widgets.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => submit({ intent: "create" }, { method: "post" })}
+            className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black"
+          >
+            <span className="h-4 w-4"><Icon source={PlusIcon} /></span>
+            Add Widget
+          </button>
+        </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-         <table className="w-full text-left border-collapse">
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full border-collapse text-left">
             <thead>
-               <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Name</th>
-                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                  <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
-               </tr>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Name</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Status</th>
+                <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-gray-400">Actions</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-               {widgets.map((item: any) => (
-                 <tr key={item.id} className="hover:bg-gray-50/50">
-                    <td className="px-6 py-4">
-                       <p className="text-sm font-bold text-gray-800">{item.name}</p>
-                       {item.isDefault && <span className="text-[9px] bg-blue-100 text-blue-600 px-1 py-0.5 rounded font-bold uppercase">Default</span>}
-                    </td>
-                    <td className="px-6 py-4">
-                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${item.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {item.isActive ? "Active" : "Disabled"}
-                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                       <div className="flex items-center justify-end gap-3">
-                          <button 
-                            onClick={() => navigate(`/app/widgets/${item.id}`)} 
-                            className="px-4 py-1.5 bg-blue-600 border border-blue-700 rounded-lg text-xs font-bold text-white hover:bg-blue-700 shadow-sm transition-all flex items-center gap-1.5"
-                          >
-                             <span>🎨</span> Customize Design
-                          </button>
-                          {!item.isDefault && (
-                            <button 
-                              onClick={() => { if(confirm('Delete this widget?')) submit({ intent: 'delete', id: item.id }, { method: 'post' }); }} 
-                              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Delete Widget"
-                            >
-                               <Icon source={DeleteIcon} />
-                            </button>
-                          )}
-                       </div>
-                    </td>
-                 </tr>
-               ))}
+              {widgets.map((item) => (
+                <tr key={item.id} className="hover:bg-gray-50/50">
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-bold text-gray-800">{item.name}</p>
+                    {item.isDefault && (
+                      <span className="rounded bg-blue-100 px-1 py-0.5 text-[9px] font-bold uppercase text-blue-600">
+                        Default
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        item.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {item.isActive ? "Active" : "Disabled"}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/app/widgets/${item.id}`)}
+                        className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-blue-700 bg-blue-600 px-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-blue-700"
+                      >
+                        <span className="h-4 w-4"><Icon source={EditIcon} /></span>
+                        Customize Design
+                      </button>
+                      {!item.isDefault && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm("Delete this widget?")) {
+                              submit({ intent: "delete", id: item.id }, { method: "post" });
+                            }
+                          }}
+                          className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                          title="Delete Widget"
+                        >
+                          <Icon source={DeleteIcon} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
-         </table>
+          </table>
+        </div>
       </div>
     </div>
   );

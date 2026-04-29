@@ -7,49 +7,308 @@
  * Unauthorized copying, modification, or distribution of this file,
  * via any medium, is strictly prohibited.
  */
-import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData } from "react-router";
-import { data } from "react-router";
+import {
+  data,
+  useLoaderData,
+  type HeadersFunction,
+  type LoaderFunctionArgs,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { Icon, Text } from "@shopify/polaris";
+import { ChatIcon, CheckCircleIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { useState } from "react";
 
+type AdminGraphqlClient = {
+  graphql: (
+    query: string,
+    options?: { variables?: Record<string, unknown> },
+  ) => Promise<Response>;
+};
+
+const productGidFromId = (productId: string) => {
+  const value = productId.trim();
+  if (/^gid:\/\/shopify\/Product\/\d+$/i.test(value)) return value;
+  if (/^\d+$/.test(value)) return `gid://shopify/Product/${value}`;
+  return "";
+};
+
+const shortProductId = (productId: string) => {
+  const match = productId.match(/Product\/(\d+)$/i);
+  return match ? match[1] : productId;
+};
+
+type ProductMetadata = {
+  title?: string;
+  priceCents?: number;
+  currencyCode?: string;
+};
+
+type OrderRevenueSummary = {
+  amountCents: number;
+  currencyCode: string;
+  orderCount: number;
+  unavailableReason?: "order_access_denied" | "api_error";
+};
+
+type AnalyticsEventSummary = {
+  eventType: string;
+  productId: string | null;
+  productTitle?: string | null;
+  productPriceCents?: number | null;
+  currencyCode?: string | null;
+  countryCode: string | null;
+};
+
+const formatMoney = (cents: number, currencyCode: string) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currencyCode || "USD",
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).format(cents / 100);
+
+const fetchProductMetadata = async (
+  admin: AdminGraphqlClient,
+  productIds: string[],
+) => {
+  const sourceByGid = new Map<string, string[]>();
+
+  productIds.forEach((productId) => {
+    const gid = productGidFromId(productId);
+    if (!gid) return;
+    sourceByGid.set(gid, [...(sourceByGid.get(gid) || []), productId]);
+  });
+
+  const ids = Array.from(sourceByGid.keys());
+  if (ids.length === 0) return new Map<string, ProductMetadata>();
+
+  try {
+    const response = await admin.graphql(
+      `#graphql
+        query ProductMetadata($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              title
+              priceRangeV2 {
+                minVariantPrice {
+                  amount
+                  currencyCode
+                }
+              }
+            }
+          }
+        }
+      `,
+      { variables: { ids } },
+    );
+    const payload = (await response.json()) as {
+      data?: {
+        nodes?: Array<{
+          id?: string;
+          title?: string;
+          priceRangeV2?: {
+            minVariantPrice?: {
+              amount?: string;
+              currencyCode?: string;
+            };
+          };
+        } | null>;
+      };
+    };
+    const metadataByProductId = new Map<string, ProductMetadata>();
+
+    payload.data?.nodes?.forEach((node) => {
+      if (!node?.id) return;
+      const amount = Number(node.priceRangeV2?.minVariantPrice?.amount);
+      const metadata = {
+        title: node.title,
+        priceCents: Number.isFinite(amount) ? Math.round(amount * 100) : undefined,
+        currencyCode: node.priceRangeV2?.minVariantPrice?.currencyCode,
+      };
+      (sourceByGid.get(node.id) || []).forEach((sourceProductId) => {
+        metadataByProductId.set(sourceProductId, metadata);
+      });
+    });
+
+    return metadataByProductId;
+  } catch {
+    return new Map<string, ProductMetadata>();
+  }
+};
+
 // ─── Loader ───────────────────────────────────────────────────────────────────
+const fetchOrderRevenue = async (
+  admin: AdminGraphqlClient,
+  since: Date,
+): Promise<OrderRevenueSummary> => {
+  const revenueByCurrency = new Map<string, number>();
+  let orderCount = 0;
+  let cursor: string | null = null;
+  const queryString = `created_at:>=${since.toISOString().slice(0, 10)}`;
+
+  try {
+    for (let page = 0; page < 10; page += 1) {
+      const response = await admin.graphql(
+        `#graphql
+          query OrdersRevenue($first: Int!, $after: String, $query: String!) {
+            orders(first: $first, after: $after, reverse: true, sortKey: CREATED_AT, query: $query) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            first: 100,
+            after: cursor,
+            query: queryString,
+          },
+        },
+      );
+      const payload = (await response.json()) as {
+        errors?: Array<{
+          message?: string;
+          extensions?: {
+            code?: string;
+          };
+        }>;
+        data?: {
+          orders?: {
+            pageInfo?: {
+              hasNextPage?: boolean;
+              endCursor?: string | null;
+            };
+            nodes?: Array<{
+              totalPriceSet?: {
+                shopMoney?: {
+                  amount?: string;
+                  currencyCode?: string;
+                };
+              };
+            }>;
+          };
+        };
+      };
+      const orders = payload.data?.orders;
+      if (!orders && payload.errors?.length) {
+        const accessDenied = payload.errors.some(
+          (error) => error.extensions?.code === "ACCESS_DENIED",
+        );
+        return {
+          amountCents: 0,
+          currencyCode: "USD",
+          orderCount: 0,
+          unavailableReason: accessDenied ? "order_access_denied" : "api_error",
+        };
+      }
+      if (!orders) break;
+
+      orders.nodes?.forEach((order) => {
+        const amount = Number(order.totalPriceSet?.shopMoney?.amount);
+        const currencyCode = order.totalPriceSet?.shopMoney?.currencyCode || "USD";
+        if (!Number.isFinite(amount)) return;
+        orderCount += 1;
+        revenueByCurrency.set(
+          currencyCode,
+          (revenueByCurrency.get(currencyCode) || 0) + Math.round(amount * 100),
+        );
+      });
+
+      if (!orders.pageInfo?.hasNextPage || !orders.pageInfo.endCursor) break;
+      cursor = orders.pageInfo.endCursor;
+    }
+  } catch {
+    return { amountCents: 0, currencyCode: "USD", orderCount: 0, unavailableReason: "api_error" };
+  }
+
+  const primaryRevenue = Array.from(revenueByCurrency.entries()).sort(
+    (a, b) => b[1] - a[1],
+  )[0];
+
+  return {
+    amountCents: primaryRevenue?.[1] || 0,
+    currencyCode: primaryRevenue?.[0] || "USD",
+    orderCount,
+  };
+};
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const analyticsDelegate = prisma.analyticsEvent;
+
+  const eventsPromise: Promise<AnalyticsEventSummary[]> = analyticsDelegate
+    ? analyticsDelegate
+        .findMany({
+          where: { shop, createdAt: { gte: since } },
+          orderBy: { createdAt: "desc" },
+          take: 5000,
+          select: {
+            eventType: true,
+            productId: true,
+            productTitle: true,
+            productPriceCents: true,
+            currencyCode: true,
+            countryCode: true,
+          },
+        })
+        .catch(() =>
+          analyticsDelegate
+            .findMany({
+              where: { shop, createdAt: { gte: since } },
+              orderBy: { createdAt: "desc" },
+              take: 5000,
+              select: {
+                eventType: true,
+                productId: true,
+                countryCode: true,
+              },
+            })
+            .then((rows) => rows as AnalyticsEventSummary[])
+            .catch(() => []),
+        )
+    : Promise.resolve([]);
 
   const [totalRules, activeRules, settings, events] = await Promise.all([
     prisma.deliveryRule.count({ where: { shop } }),
     prisma.deliveryRule.count({ where: { shop, isActive: true } }),
     prisma.appSetting.findUnique({ where: { shop } }),
-    analyticsDelegate
-      ? analyticsDelegate
-          .findMany({
-            where: { shop, createdAt: { gte: since } },
-            orderBy: { createdAt: "desc" },
-            take: 5000,
-            select: {
-              eventType: true,
-              productId: true,
-              countryCode: true,
-            },
-          })
-          .catch(() => [])
-      : Promise.resolve([]),
+    eventsPromise,
   ]);
 
   const countEvent = (eventType: string) =>
     events.filter((event) => event.eventType === eventType).length;
   const productCounts = new Map<string, number>();
+  const eventProductMetadata = new Map<string, ProductMetadata>();
   const countryCounts = new Map<string, number>();
 
   events.forEach((event) => {
     if (event.eventType === "view" && event.productId) {
       productCounts.set(event.productId, (productCounts.get(event.productId) || 0) + 1);
+    }
+    if (event.productId) {
+      const current = eventProductMetadata.get(event.productId) || {};
+      eventProductMetadata.set(event.productId, {
+        title: current.title || event.productTitle || undefined,
+        priceCents:
+          current.priceCents ??
+          event.productPriceCents ??
+          undefined,
+        currencyCode: current.currencyCode || event.currencyCode || undefined,
+      });
     }
     if (event.countryCode) {
       countryCounts.set(event.countryCode, (countryCounts.get(event.countryCode) || 0) + 1);
@@ -63,6 +322,33 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const engagementRate = views ? (((hovers + clicks) / views) * 100).toFixed(2) : "0.00";
   const clickThroughRate = views ? ((clicks / views) * 100).toFixed(2) : "0.00";
   const addToCartRate = views ? ((addToCart / views) * 100).toFixed(2) : "0.00";
+  const topProducts = Array.from(productCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([productId, count]) => ({ productId, count }));
+
+  const productIdsForMetadata = Array.from(
+    new Set(topProducts.map((product) => product.productId)),
+  );
+  const [shopifyProductMetadata, orderRevenue] = await Promise.all([
+    fetchProductMetadata(admin as AdminGraphqlClient, productIdsForMetadata),
+    fetchOrderRevenue(admin as AdminGraphqlClient, since),
+  ]);
+  const metadataForProduct = (productId: string) => {
+    const stored = eventProductMetadata.get(productId) || {};
+    const shopify = shopifyProductMetadata.get(productId) || {};
+
+    return {
+      title: stored.title || shopify.title,
+      priceCents: stored.priceCents ?? shopify.priceCents,
+      currencyCode: stored.currencyCode || shopify.currencyCode,
+    };
+  };
+
+  const estimatedSavedMinutes = Math.max(
+    0,
+    Math.round((views * 30 + clicks * 20 + addToCart * 45 + countEvent("country_change") * 20) / 60),
+  );
 
   return data({
     shop,
@@ -79,10 +365,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       engagementRate,
       clickThroughRate,
       addToCartRate,
-      topProducts: Array.from(productCounts.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([productId, count]) => ({ productId, count })),
+      revenue: formatMoney(orderRevenue.amountCents, orderRevenue.currencyCode),
+      revenueCurrency: orderRevenue.currencyCode,
+      orderCount: orderRevenue.orderCount,
+      revenueUnavailableReason: orderRevenue.unavailableReason,
+      estimatedSavedMinutes,
+      topProducts: topProducts.map((product) => ({
+        ...product,
+        title: metadataForProduct(product.productId).title ||
+          `Product ${shortProductId(product.productId)}`,
+      })),
       customersByCountry: Array.from(countryCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
@@ -115,7 +407,7 @@ function StatCard({
   value: string | number;
 }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col gap-1">
+    <div className="flex flex-col gap-1 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <span className="text-xs text-gray-500 font-medium">{label}</span>
       <span className="text-2xl font-bold text-gray-900">{value}</span>
     </div>
@@ -143,11 +435,23 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
-      <div className="max-w-5xl mx-auto space-y-4">
+      <div className="mx-auto max-w-6xl space-y-4">
+
+      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Analytics Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <span className={`flex h-2 w-2 rounded-full ${isEnabled ? "bg-green-500 animate-pulse" : "bg-amber-500"}`} />
+            <Text variant="bodySm" tone="subdued" as="p">
+              Storefront events and order insights
+            </Text>
+          </div>
+        </div>
+      </div>
 
       {/* ─── Upgrade Banner ─────────────────────────────────────────────────── */}
       {!bannerDismissed && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <div className="flex items-start gap-2">
             <span className="text-amber-500 text-base">⚠️</span>
             <div>
@@ -157,7 +461,7 @@ export default function Dashboard() {
               <p className="text-xs text-amber-700 mt-0.5">
                 Get advanced ETA insights and detailed reports by upgrading your plan
               </p>
-              <button className="mt-2 text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded font-medium transition-colors">
+              <button className="mt-2 inline-flex h-9 items-center justify-center rounded-xl bg-amber-500 px-3 text-xs font-bold text-white transition-colors hover:bg-amber-600">
                 Upgrade now
               </button>
             </div>
@@ -173,7 +477,7 @@ export default function Dashboard() {
 
       {/* ─── Date Filter ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2">
-        <button className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+        <button className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50">
           <span>📅</span>
           <span>{dateRange}</span>
           <span className="text-gray-400 text-xs">▾</span>
@@ -182,30 +486,50 @@ export default function Dashboard() {
       </div>
 
       {/* ─── Revenue & Time Saved ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500 font-medium mb-1">Revenue</p>
-          <p className="text-3xl font-bold text-gray-900">
-            $0 <span className="text-base font-normal text-gray-400">USD</span>
-          </p>
+          {analytics.revenueUnavailableReason ? (
+            <>
+              <p className="text-2xl font-bold text-amber-700">Unavailable</p>
+              <p className="text-xs text-amber-700 mt-1">
+                {analytics.revenueUnavailableReason === "order_access_denied"
+                  ? "Order API access is blocked by Shopify protected customer data settings."
+                  : "Shopify Orders API could not be loaded."}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-3xl font-bold text-gray-900">
+                {analytics.revenue}{" "}
+                <span className="text-base font-normal text-gray-400">
+                  {analytics.revenueCurrency}
+                </span>
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                From {analytics.orderCount} Shopify orders
+              </p>
+            </>
+          )}
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 font-medium mb-1">Total saved time</p>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs text-gray-500 font-medium mb-1">Estimated saved time</p>
           <p className="text-3xl font-bold text-gray-900">
-            0 <span className="text-base font-normal text-gray-400">Min</span>
+            {analytics.estimatedSavedMinutes}{" "}
+            <span className="text-base font-normal text-gray-400">Min</span>
           </p>
         </div>
       </div>
 
       {/* ─── Rate Metrics ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <StatCard label="Engagement rate" value={`${analytics.engagementRate} %`} />
         <StatCard label="Click-through rate" value={`${analytics.clickThroughRate} %`} />
         <StatCard label="Add to cart rate" value={`${analytics.addToCartRate} %`} />
       </div>
 
       {/* ─── Count Stats ──────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="grid grid-cols-3 md:grid-cols-6 gap-4 divide-x divide-gray-100">
           {countStats.map((item) => (
             <div key={item.label} className="pl-4 first:pl-0 flex flex-col gap-1">
@@ -217,7 +541,7 @@ export default function Dashboard() {
       </div>
 
       {/* ─── Chart: Hover by device type ──────────────────────────────────────── */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
         <p className="text-sm font-semibold text-gray-700 mb-3">Hover by device type</p>
         <div className="flex gap-2">
           {/* Y-labels */}
@@ -249,7 +573,7 @@ export default function Dashboard() {
 
       {/* ─── Bottom panels ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm font-semibold text-gray-700 mb-3">Top selling ETA products</p>
           {analytics.topProducts.length === 0 ? (
             <div className="flex items-center justify-center h-28 text-xs text-gray-400">
@@ -259,14 +583,16 @@ export default function Dashboard() {
             <div className="space-y-2">
               {analytics.topProducts.map((item) => (
                 <div key={item.productId} className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-gray-700">Product {item.productId}</span>
+                  <span className="font-medium text-gray-700 truncate pr-3" title={item.productId}>
+                    {item.title}
+                  </span>
                   <span className="text-gray-500">{item.count} views</span>
                 </div>
               ))}
             </div>
           )}
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm font-semibold text-gray-700 mb-3">Customers by country</p>
           {analytics.customersByCountry.length === 0 ? (
             <div className="flex items-center justify-center h-28 text-xs text-gray-400">
@@ -286,7 +612,7 @@ export default function Dashboard() {
       </div>
 
       {/* ─── App Status ───────────────────────────────────────────────────────── */}
-      <div className={`rounded-lg p-3 flex items-center gap-3 border ${
+      <div className={`flex items-center gap-3 rounded-2xl border p-4 shadow-sm ${
         isEnabled ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
       }`}>
         <span className="text-lg">{isEnabled ? "✅" : "⚡"}</span>
@@ -299,35 +625,38 @@ export default function Dashboard() {
             <strong>{activeRules}</strong> of <strong>{totalRules}</strong>
           </p>
         </div>
-        <a href="/app/settings" className="text-xs underline text-gray-500 hover:text-gray-700">
+        <a href="/app/settings" className="inline-flex h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 shadow-sm hover:bg-gray-50">
           Configure →
         </a>
       </div>
 
       {/* ─── Footer Links ─────────────────────────────────────────────────────── */}
-      <div className="text-center space-y-3 pt-2">
-        <p className="text-xs text-blue-500 hover:underline cursor-pointer">
-          Help or Feature request?
-        </p>
-        <div className="flex items-center justify-center gap-3">
+      <div className="mx-auto mt-6 max-w-6xl space-y-3 border-t border-gray-100 py-6 text-center">
+        <div className="space-y-0.5">
+          <h3 className="text-sm font-bold text-gray-800">Direct Support</h3>
+          <p className="text-xs text-gray-400">Our team is available to help you with custom setups.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <a
             href="mailto:support@bluepeaks.top"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 shadow-sm transition-colors hover:bg-gray-50"
           >
-            ✉️ Email
+            <div className="h-3.5 w-3.5"><Icon source={ChatIcon} /></div>
+            Email Support
           </a>
-          <a
-            href="https://wa.me/84000000000"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-green-200 text-xs font-medium text-green-600 hover:bg-green-50 transition-colors"
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-green-100 bg-green-50 px-3 text-xs font-bold text-green-700 shadow-sm transition-colors hover:bg-green-100"
           >
-            💬 WhatsApp
-          </a>
-          <button className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-red-200 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
-            ❤️ Love this app?
+            <div className="h-3.5 w-3.5"><Icon source={ChatIcon} /></div>
+            WhatsApp
+          </button>
+          <button className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 text-xs font-bold text-red-600 transition-colors hover:bg-red-100">
+            <div className="h-3.5 w-3.5"><Icon source={CheckCircleIcon} /></div>
+            Leave a Review
           </button>
         </div>
+        <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-gray-300">(c) 2025 BluePeaks - All Rights Reserved</p>
       </div>
 
       </div>

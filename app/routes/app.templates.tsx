@@ -2,12 +2,14 @@
  * BP: Estimated Delivery & Geo - Widget Template Gallery
  * Copyright (c) 2025 BluePeaks. All rights reserved.
  */
-import type { ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
 import {
   data as routerData,
   redirect,
   useActionData,
+  useLoaderData,
+  useNavigate,
   useNavigation,
   useSubmit,
 } from "react-router";
@@ -16,9 +18,16 @@ import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import type { WidgetStyleId } from "../lib/delivery";
+import {
+  buildFallbackBlocks,
+  DEFAULT_SHIPPING_MESSAGE,
+  type BlockConfig,
+  type WidgetSettingsProps,
+  type WidgetStyleId,
+} from "../lib/delivery";
 
 type TemplateId = Exclude<WidgetStyleId, "custom">;
+type TemplateMainTab = "General" | "My design";
 type TemplateCategory =
   | "Animated"
   | "Industry"
@@ -42,10 +51,173 @@ type ActionResult = {
   error?: string;
 };
 
+type SavedWidget = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  widgetStyle: string;
+  customBlocks: unknown;
+  textColor: string;
+  iconColor: string;
+  bgColor: string;
+  borderColor: string;
+  borderRadius: number;
+  shadow: string | null;
+  glassmorphism: boolean | null;
+  padding: number | null;
+  bgGradient: string | null;
+  showTimeline: boolean;
+  policyText: string | null;
+  headerText: string | null;
+  subHeaderText: string | null;
+  step1Label: string | null;
+  step1SubText: string | null;
+  step1Icon: string | null;
+  step2Label: string | null;
+  step2SubText: string | null;
+  step2Icon: string | null;
+  step3Label: string | null;
+  step3SubText: string | null;
+  step3Icon: string | null;
+  updatedAt: string;
+};
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const widgets = await prisma.widget.findMany({
+    where: { shop: session.shop, isDefault: false },
+    orderBy: [{ updatedAt: "desc" }],
+    select: {
+      id: true,
+      name: true,
+      isDefault: true,
+      isActive: true,
+      widgetStyle: true,
+      customBlocks: true,
+      textColor: true,
+      iconColor: true,
+      bgColor: true,
+      borderColor: true,
+      borderRadius: true,
+      shadow: true,
+      glassmorphism: true,
+      padding: true,
+      bgGradient: true,
+      showTimeline: true,
+      policyText: true,
+      headerText: true,
+      subHeaderText: true,
+      step1Label: true,
+      step1SubText: true,
+      step1Icon: true,
+      step2Label: true,
+      step2SubText: true,
+      step2Icon: true,
+      step3Label: true,
+      step3SubText: true,
+      step3Icon: true,
+      updatedAt: true,
+    },
+  });
+
+  return routerData({
+    widgets: widgets.map((widget) => ({
+      ...widget,
+      updatedAt: widget.updatedAt.toISOString(),
+    })),
+  });
+};
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
+  const intent = String(formData.get("intent") || "template");
   const templateId = String(formData.get("templateId") || "");
+  const widgetId = String(formData.get("widgetId") || "");
+
+  if (intent === "create-design") {
+    const widget = await prisma.widget.create({
+      data: {
+        shop: session.shop,
+        name: "New Design",
+        isDefault: false,
+        isActive: true,
+        padding: 16,
+        customBlocks: buildFallbackBlocks(
+          {},
+          DEFAULT_SHIPPING_MESSAGE,
+        ) as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return redirect(`/app/widgets/${widget.id}`);
+  }
+
+  if (intent === "saved-design") {
+    if (!widgetId) {
+      return routerData({ error: "Invalid design" }, { status: 400 });
+    }
+
+    const sourceWidget = await prisma.widget.findFirst({
+      where: { id: widgetId, shop: session.shop },
+    });
+
+    if (!sourceWidget) {
+      return routerData({ error: "Design not found" }, { status: 404 });
+    }
+
+    const defaultWidget = await prisma.widget.findFirst({
+      where: { shop: session.shop, isDefault: true },
+    });
+
+    const widgetData = {
+      widgetStyle: "custom",
+      customBlocks: sourceWidget.customBlocks as Prisma.InputJsonValue,
+      textColor: sourceWidget.textColor,
+      iconColor: sourceWidget.iconColor,
+      bgColor: sourceWidget.bgColor,
+      borderColor: sourceWidget.borderColor,
+      borderRadius: sourceWidget.borderRadius,
+      shadow: sourceWidget.shadow,
+      glassmorphism: sourceWidget.glassmorphism,
+      padding: sourceWidget.padding,
+      bgGradient: sourceWidget.bgGradient,
+      showTimeline: sourceWidget.showTimeline,
+      policyText: sourceWidget.policyText,
+      headerText: sourceWidget.headerText,
+      subHeaderText: sourceWidget.subHeaderText,
+      step1Label: sourceWidget.step1Label,
+      step1SubText: sourceWidget.step1SubText,
+      step1Icon: sourceWidget.step1Icon,
+      step2Label: sourceWidget.step2Label,
+      step2SubText: sourceWidget.step2SubText,
+      step2Icon: sourceWidget.step2Icon,
+      step3Label: sourceWidget.step3Label,
+      step3SubText: sourceWidget.step3SubText,
+      step3Icon: sourceWidget.step3Icon,
+      updatedAt: new Date(),
+    };
+
+    if (defaultWidget) {
+      await prisma.widget.update({
+        where: { id: defaultWidget.id },
+        data: widgetData,
+      });
+    } else {
+      await prisma.widget.create({
+        data: {
+          shop: session.shop,
+          name: "Main Widget",
+          isDefault: true,
+          isActive: true,
+          ...widgetData,
+        },
+      });
+    }
+
+    return redirect(`/app/settings?sourceDesignId=${encodeURIComponent(sourceWidget.id)}`);
+  }
 
   if (!templateId || !TEMPLATE_DEFAULTS[templateId]) {
     return routerData({ error: "Invalid template" }, { status: 400 });
@@ -88,7 +260,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
-  return redirect("/app/settings");
+  return redirect("/app/settings?templateApplied=1");
 };
 
 const CATEGORIES: TemplateCategory[] = [
@@ -100,6 +272,8 @@ const CATEGORIES: TemplateCategory[] = [
   "Informative",
   "Seasonal",
 ];
+
+const MAIN_TABS: TemplateMainTab[] = ["General", "My design"];
 
 const WIDGET_TEMPLATES: TemplateMeta[] = [
   {
@@ -366,9 +540,9 @@ function TemplateCard({
   const settings = TEMPLATE_DEFAULTS[template.style];
 
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="p-4">
-        <div className="rounded-lg bg-gray-50 p-2">
+        <div className="rounded-xl bg-gray-50 p-2">
           <WidgetPreviewRenderer settings={{ ...settings, shadow: "none" }} />
         </div>
       </div>
@@ -382,7 +556,7 @@ function TemplateCard({
           type="button"
           onClick={() => onUseTemplate(template)}
           disabled={isSubmitting}
-          className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex h-9 w-full items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSubmitting ? "Applying..." : "Use template"}
         </button>
@@ -391,10 +565,139 @@ function TemplateCard({
   );
 }
 
+function widgetPreviewSettings(widget: SavedWidget): WidgetSettingsProps {
+  return {
+    style: "custom",
+    widgetStyle: widget.widgetStyle || "custom",
+    customBlocks: Array.isArray(widget.customBlocks)
+      ? (widget.customBlocks as BlockConfig[])
+      : undefined,
+    headerText: widget.headerText,
+    subHeaderText: widget.subHeaderText,
+    step1Label: widget.step1Label,
+    step1SubText: widget.step1SubText,
+    step1Icon: widget.step1Icon,
+    step2Label: widget.step2Label,
+    step2SubText: widget.step2SubText,
+    step2Icon: widget.step2Icon,
+    step3Label: widget.step3Label,
+    step3SubText: widget.step3SubText,
+    step3Icon: widget.step3Icon,
+    textColor: widget.textColor || "#000000",
+    iconColor: widget.iconColor || "#0033cc",
+    bgColor: widget.bgColor || "#ffffff",
+    borderColor: widget.borderColor || "#e5e7eb",
+    borderRadius: widget.borderRadius ?? 10,
+    shadow: widget.shadow || "none",
+    glassmorphism: widget.glassmorphism,
+    padding: widget.padding,
+    bgGradient: widget.bgGradient,
+    showTimeline: widget.showTimeline,
+    policyText: widget.policyText,
+  };
+}
+
+function MyDesignCard({
+  widget,
+  isSubmitting,
+  onCustomize,
+  onUseDesign,
+}: {
+  widget: SavedWidget;
+  isSubmitting: boolean;
+  onCustomize: (widgetId: string) => void;
+  onUseDesign: (widget: SavedWidget) => void;
+}) {
+  const settings = widgetPreviewSettings(widget);
+  const updatedAt = new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(widget.updatedAt));
+
+  return (
+    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      <div className="p-4">
+        <div className="rounded-xl bg-gray-50 p-2">
+          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none" }} />
+        </div>
+      </div>
+
+      <div className="mt-auto border-t border-gray-100 p-4">
+        <div className="mb-3 min-h-[70px]">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {widget.isDefault && (
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                Default
+              </span>
+            )}
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                widget.isActive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}
+            >
+              {widget.isActive ? "Active" : "Disabled"}
+            </span>
+          </div>
+          <h3 className="text-sm font-bold text-gray-950">{widget.name}</h3>
+          <p className="mt-1 text-xs leading-5 text-gray-500">Updated {updatedAt}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onUseDesign(widget)}
+            disabled={isSubmitting}
+            className="flex h-9 w-full items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting ? "Applying..." : "Use design"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onCustomize(widget.id)}
+            disabled={isSubmitting}
+            className="flex h-9 w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Customize
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function NewDesignCard({
+  isSubmitting,
+  onCreate,
+}: {
+  isSubmitting: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onCreate}
+      disabled={isSubmitting}
+      className="flex min-h-[360px] h-full flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center shadow-sm transition-all hover:border-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-3xl font-light leading-none text-gray-900">
+        +
+      </span>
+      <span className="mt-4 text-sm font-bold text-gray-950">
+        {isSubmitting ? "Creating..." : "Create new design"}
+      </span>
+      <span className="mt-2 max-w-[220px] text-xs leading-5 text-gray-500">
+        Start from a blank delivery widget and customize it in the editor.
+      </span>
+    </button>
+  );
+}
+
 export default function TemplateBuilder() {
+  const { widgets } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
   const actionData = useActionData() as ActionResult | undefined;
+  const [activeMainTab, setActiveMainTab] = useState<TemplateMainTab>("General");
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>("Animated");
   const [pendingStyle, setPendingStyle] = useState<TemplateId | null>(null);
 
@@ -411,58 +714,120 @@ export default function TemplateBuilder() {
     );
   };
 
+  const handleUseSavedDesign = (widget: SavedWidget) => {
+    setPendingStyle(null);
+    submit(
+      { intent: "saved-design", widgetId: widget.id, widgetName: widget.name },
+      { method: "post" },
+    );
+  };
+
+  const handleCreateDesign = () => {
+    setPendingStyle(null);
+    submit({ intent: "create-design" }, { method: "post" });
+  };
+
   const isSubmitting = navigation.state === "submitting";
+  const isCreatingDesign = isSubmitting && navigation.formData?.get("intent") === "create-design";
 
   return (
-    <div className="min-h-screen bg-[#f6f6f7] px-4 py-5 md:px-6">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
+    <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight text-gray-950">Widget Templates</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Pick a ready-made delivery design and apply it to your default storefront widget.
-            </p>
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-blue-500" />
+              <p className="text-sm text-gray-500">
+                Pick a ready-made delivery design and apply it to your default storefront widget.
+              </p>
+            </div>
           </div>
-          <div className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-gray-500 shadow-sm ring-1 ring-gray-200">
-            {WIDGET_TEMPLATES.length} templates
+          <div className="inline-flex h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-500 shadow-sm">
+            {activeMainTab === "General"
+              ? `${WIDGET_TEMPLATES.length} templates`
+              : `${widgets.length} designs`}
           </div>
         </div>
 
         {actionData?.error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
             {actionData.error}
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
-          <div className="flex min-w-max gap-1">
-            {CATEGORIES.map((category) => (
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="grid grid-cols-2 border-b border-gray-200">
+            {MAIN_TABS.map((tab) => (
               <button
-                key={category}
+                key={tab}
                 type="button"
-                onClick={() => setActiveCategory(category)}
-                className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
-                  activeCategory === category
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-950"
+                onClick={() => setActiveMainTab(tab)}
+                className={`relative flex h-12 items-center justify-center text-sm font-bold transition-colors ${
+                  activeMainTab === tab
+                    ? "text-gray-950"
+                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-950"
                 }`}
               >
-                {category}
+                {tab}
+                {activeMainTab === tab && (
+                  <span className="absolute -bottom-px left-1 right-1 h-0.5 rounded-full bg-gray-900" />
+                )}
               </button>
             ))}
           </div>
+
+          {activeMainTab === "General" && (
+            <div className="overflow-x-auto px-3 py-4">
+              <div className="flex min-w-max gap-2">
+                {CATEGORIES.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveCategory(category)}
+                    className={`inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold transition-colors ${
+                      activeCategory === category
+                        ? "bg-gray-100 text-gray-950 shadow-sm"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-950"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visibleTemplates.map((template) => (
-            <TemplateCard
-              key={template.style}
-              template={template}
-              isSubmitting={isSubmitting && pendingStyle === template.style}
-              onUseTemplate={handleUseTemplate}
-            />
-          ))}
-        </div>
+        {activeMainTab === "General" ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {visibleTemplates.map((template) => (
+              <TemplateCard
+                key={template.style}
+                template={template}
+                isSubmitting={isSubmitting && pendingStyle === template.style}
+                onUseTemplate={handleUseTemplate}
+              />
+            ))}
+          </div>
+        ) : widgets.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <NewDesignCard isSubmitting={isCreatingDesign} onCreate={handleCreateDesign} />
+            {widgets.map((widget) => (
+              <MyDesignCard
+                key={widget.id}
+                widget={widget}
+                isSubmitting={isSubmitting && navigation.formData?.get("widgetId") === widget.id}
+                onCustomize={(widgetId) => navigate(`/app/widgets/${widgetId}`)}
+                onUseDesign={handleUseSavedDesign}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <NewDesignCard isSubmitting={isCreatingDesign} onCreate={handleCreateDesign} />
+          </div>
+        )}
       </div>
     </div>
   );

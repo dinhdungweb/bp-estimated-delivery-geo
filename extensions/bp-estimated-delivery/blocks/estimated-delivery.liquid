@@ -8,6 +8,9 @@
 <div id="bp-delivery-block-content" 
      data-shop="{{ shop.permanent_domain }}"
      data-product-id="{{ product.id }}"
+     data-product-title="{{ product.title | escape }}"
+     data-product-price-cents="{{ product.selected_or_first_available_variant.price }}"
+     data-currency-code="{{ cart.currency.iso_code | default: shop.currency }}"
      data-product-tags="{{ product.tags | join: ',' }}"
      style="display:none; min-height: 100px; margin: 15px 0;">
   <div class="bp-skeleton" id="bp-delivery-block-content-skeleton" style="width:100%; height:120px; background:#f5f5f5; border-radius:12px; animation: bp-skeleton 1.5s infinite ease-in-out;"></div>

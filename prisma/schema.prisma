@@ -141,6 +141,9 @@ model AnalyticsEvent {
   shop        String
   eventType   String
   productId   String?
+  productTitle String?
+  productPriceCents Int?
+  currencyCode String?
   widgetId    String?
   countryCode String?
   productTags Json?

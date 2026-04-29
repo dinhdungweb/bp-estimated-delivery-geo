@@ -11,6 +11,7 @@ import {
   LORDICON_PRESETS,
   LORDICON_STATES_BY_FILE,
   LORDICON_URL_PATTERN,
+  getAnimatedIconFileKey,
 } from "../lib/lordiconPresets";
 import type { WidgetSettingsProps } from "../lib/delivery";
 import {
@@ -76,7 +77,15 @@ const cleanLordiconState = (value: unknown) => {
   return /^[a-z0-9_-]{1,48}$/i.test(state) ? state : "";
 };
 
+const animatedIconUrl = (icon?: string) => {
+  const fileKey = getAnimatedIconFileKey(icon);
+  return fileKey && LORDICON_STATES_BY_FILE[fileKey] ? `/icons/animated/${fileKey}.json` : "";
+};
+
 const safeLordiconUrl = (settings: Record<string, unknown> = {}, icon?: string) => {
+  const directAnimatedIcon = animatedIconUrl(icon);
+  if (directAnimatedIcon) return directAnimatedIcon;
+
   if (settings.iconAnimation !== "lordicon") return "";
   const preset = String(settings.lordiconPreset || "auto");
   if (preset === "custom") {
@@ -97,6 +106,12 @@ const safeLordiconStateForTrigger = (
   if (explicitState) return explicitState;
 
   const stateType = trigger === "in" ? "intro" : trigger === "loop" ? "loop" : "hover";
+  const animatedFileKey = getAnimatedIconFileKey(icon);
+  if (animatedFileKey) {
+    const states = LORDICON_STATES_BY_FILE[animatedFileKey];
+    return states?.[stateType] || states?.hover || "";
+  }
+
   const preset = String(settings.lordiconPreset || "auto");
 
   if (preset === "custom") {
@@ -230,7 +245,9 @@ const IconRenderer = ({
   if (!icon) return null;
 
   let staticIcon: ReactNode;
-  if (icon.startsWith("/icons/") || icon.includes(".png")) {
+  if (getAnimatedIconFileKey(icon)) {
+    staticIcon = <span aria-hidden="true" />;
+  } else if (icon.startsWith("/icons/") || icon.includes(".png")) {
     const path = icon.startsWith("/") ? icon : `/icons/${icon}`;
     staticIcon = (
       <img
@@ -424,6 +441,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       '--bp-ic': s.color || s.blockIconColor || iconColor
     } as any}>
       <div className="bp-timer-dot" style={{
+        display: 'block',
         width: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
         height: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
         flexBasis: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
@@ -555,8 +573,8 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           </div>
         </div>
       ); break;
-      case 'divider': content = <div key={block.id} style={{ height: block.settings.height || 1, background: block.settings.color || borderColor, margin: '8px 0' }} />; break;
-      case 'spacer': content = <div key={block.id} style={{ height: block.settings.height || 16 }} />; break;
+      case 'divider': content = <div key={block.id} className="bp-divider" style={{ display: 'block', height: block.settings.height || 1, background: block.settings.color || borderColor, margin: '8px 0' }} />; break;
+      case 'spacer': content = <div key={block.id} className="bp-spacer" style={{ display: 'block', height: block.settings.height || 16 }} />; break;
       case 'progress': content = (
         <div key={block.id} style={{ padding: '8px 0' }}>
           <div className="bp-text-label" style={{ marginBottom: '6px', color: block.settings.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? `${block.settings.labelFontSize}px` : undefined }}>{formatText(block.settings.label)}</div>

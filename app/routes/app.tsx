@@ -34,8 +34,8 @@ export default function App() {
       <AppProvider embedded apiKey={apiKey}>
         <s-app-nav>
           <s-link href="/app">Home</s-link>
-          <s-link href="/app/settings">Widget Settings</s-link>
           <s-link href="/app/analytics">Analytics</s-link>
+          <s-link href="/app/settings">Widget Settings</s-link>
           <s-link href="/app/rules">Delivery Rules</s-link>
           <s-link href="/app/templates">Templates</s-link>
         </s-app-nav>

@@ -13,6 +13,14 @@ const TRACKABLE_EVENTS = new Set([
   "add_to_cart",
 ]);
 
+const stringField = (value: unknown, maxLength: number) =>
+  typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+
+const positiveIntField = (value: unknown) => {
+  const raw = typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(raw) && raw >= 0 ? Math.round(raw) : null;
+};
+
 async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
   try {
     const parsed = (await request.json()) as unknown;
@@ -58,6 +66,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shop,
         eventType,
         productId: normalizeProductId(payload.productId) || null,
+        productTitle: stringField(payload.productTitle, 300) || null,
+        productPriceCents: positiveIntField(payload.productPriceCents),
+        currencyCode: stringField(payload.currencyCode, 3).toUpperCase() || null,
         widgetId: typeof payload.widgetId === "string" ? payload.widgetId : null,
         countryCode: normalizeCountry(payload.countryCode),
         productTags: productTags as unknown as Prisma.InputJsonValue,

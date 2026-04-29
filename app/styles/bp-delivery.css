@@ -55,6 +55,16 @@
   box-sizing: border-box;
 }
 
+/* Shopify themes such as Dawn hide `div:empty`; keep decorative widget parts visible. */
+.bp-widget .bp-timer-dot,
+.bp-widget .bp-progress-fill,
+.bp-widget .bp-timeline-connector,
+.bp-widget .bp-vertical-connector,
+.bp-widget .bp-divider,
+.bp-widget .bp-spacer {
+  display: block !important;
+}
+
 /* Glassmorphism 2.0 */
 .bp-glass {
   background: rgba(255, 255, 255, 0.65) !important;
@@ -485,6 +495,31 @@
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
   z-index: 2;
+}
+
+.bp-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.bp-icon-static {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  line-height: 0;
+}
+
+.bp-icon-static svg,
+.bp-icon-static img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .bp-icon-stack {

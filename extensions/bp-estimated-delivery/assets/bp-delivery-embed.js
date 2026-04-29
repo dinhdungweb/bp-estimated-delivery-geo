@@ -383,6 +383,9 @@
     return {
       shop: container.getAttribute("data-shop"),
       productId: container.getAttribute("data-product-id"),
+      productTitle: container.getAttribute("data-product-title") || "",
+      productPriceCents: container.getAttribute("data-product-price-cents") || "",
+      currencyCode: container.getAttribute("data-currency-code") || "",
       productTags: container.getAttribute("data-product-tags") || "",
       widgetId: config.widgetId || "",
       countryCode: normalizeCountry(config.countryCode) || savedCountry() || "OTHER"
@@ -402,6 +405,9 @@
     var body = JSON.stringify({
       eventType: eventType,
       productId: text(context.productId),
+      productTitle: text(context.productTitle),
+      productPriceCents: text(context.productPriceCents),
+      currencyCode: text(context.currencyCode),
       productTags: tagsArray(context.productTags),
       widgetId: text(context.widgetId),
       countryCode: context.countryCode || "OTHER"
@@ -510,11 +516,22 @@
     return /^[a-z0-9_-]{1,48}$/i.test(state) ? state : "";
   }
 
+  function animatedIconFileKey(icon) {
+    var match = /^animated:([a-z0-9-]+)$/i.exec(text(icon, ""));
+    return match && LORDICON_STATES_BY_FILE[match[1]] ? match[1] : "";
+  }
+
   function defaultLordiconState(settings, icon, trigger) {
     var explicitState = lordiconState(settings && settings.lordiconState);
     if (explicitState) return explicitState;
 
     var stateType = trigger === "in" ? "intro" : trigger === "loop" ? "loop" : "hover";
+    var animatedFileKey = animatedIconFileKey(icon);
+    if (animatedFileKey) {
+      var animatedStates = LORDICON_STATES_BY_FILE[animatedFileKey];
+      return animatedStates ? animatedStates[stateType] || animatedStates.hover || "" : "";
+    }
+
     var preset = text(settings && settings.lordiconPreset, "auto");
     if (preset === "custom") {
       var customUrl = text(settings && settings.lordiconUrl, "").trim();
@@ -541,6 +558,9 @@
 
   function lordiconSource(settings, icon) {
     settings = settings || {};
+    var animatedFileKey = animatedIconFileKey(icon);
+    if (animatedFileKey) return lordiconAsset(animatedFileKey);
+
     if (settings.iconAnimation !== "lordicon") return "";
     var preset = text(settings.lordiconPreset, "auto");
     if (preset === "custom") {
@@ -590,12 +610,27 @@
   }
 
   function createIcon(id, iconColor, size, animationSettings) {
+    var rawName = text(id, "");
     var safeName = iconName(id);
     var safeSize = number(size, 24, 8, 96);
     var wrapper = el("span", "bp-icon");
     wrapper.style.display = "inline-flex";
+    wrapper.style.alignItems = "center";
+    wrapper.style.justifyContent = "center";
+    wrapper.style.width = safeSize + "px";
+    wrapper.style.height = safeSize + "px";
+    wrapper.style.lineHeight = "0";
+    wrapper.style.verticalAlign = "middle";
     wrapper.style.color = color(iconColor, "#3b82f6");
     var staticWrap = el("span", "bp-icon-static");
+    staticWrap.style.display = "inline-flex";
+    staticWrap.style.alignItems = "center";
+    staticWrap.style.justifyContent = "center";
+    staticWrap.style.width = "100%";
+    staticWrap.style.height = "100%";
+    staticWrap.style.lineHeight = "0";
+
+    if (animatedIconFileKey(rawName) && appendLordicon(wrapper, animationSettings, rawName, color(iconColor, "#3b82f6"), safeSize)) return wrapper;
 
     if (ICON_PATH.test(safeName)) {
       if (appendLordicon(wrapper, animationSettings, id, color(iconColor, "#3b82f6"), safeSize)) return wrapper;
@@ -606,6 +641,7 @@
       img.height = safeSize;
       img.style.width = safeSize + "px";
       img.style.height = safeSize + "px";
+      img.style.display = "block";
       img.style.objectFit = "contain";
       staticWrap.appendChild(img);
       wrapper.appendChild(staticWrap);
@@ -889,6 +925,7 @@
     if (b.gap !== undefined) container.style.gap = number(b.gap, 10, 0, 40) + "px";
     container.style.setProperty("--bp-ic", color(b.color || b.blockIconColor, theme.iconColor));
     var dot = el("div", "bp-timer-dot");
+    dot.style.display = "block";
     if (b.dotSize !== undefined) {
       var dotSize = number(b.dotSize, 9, 4, 40);
       dot.style.width = dotSize + "px";
@@ -1171,14 +1208,16 @@
     else if (block.type === "trust_badges") node = renderTrustBadges(block, config, theme);
     else if (block.type === "image") node = renderImage(block);
     if (block.type === "divider") {
-      var divider = el("div");
+      var divider = el("div", "bp-divider");
+      divider.style.display = "block";
       divider.style.height = number(block.settings && block.settings.height, 1, 1, 20) + "px";
       divider.style.background = color(block.settings && block.settings.color, theme.borderColor);
       divider.style.margin = "8px 0";
       node = divider;
     }
     else if (block.type === "spacer") {
-      var spacer = el("div");
+      var spacer = el("div", "bp-spacer");
+      spacer.style.display = "block";
       spacer.style.height = number(block.settings && block.settings.height, 16, 0, 200) + "px";
       node = spacer;
     }

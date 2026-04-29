@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
-import { useLoaderData, useSubmit, useNavigation, useNavigate, useActionData, data as routerData } from "react-router";
+import { useActionData, useLoaderData, useLocation, useNavigate, useNavigation, useSubmit, data as routerData } from "react-router";
 import React, { useState, useCallback, useEffect } from "react";
 import { 
   Page, 
@@ -62,6 +62,7 @@ import {
   stripGeneratedStyleSamples,
 } from "../lib/widgetStyleSamples";
 import type { TemplatePalette } from "../lib/widgetStyleSamples";
+import { getAnimatedIconByIconId } from "../lib/lordiconPresets";
 import Chrome from '@uiw/react-color-chrome';
 import { createPortal } from "react-dom";
 
@@ -160,9 +161,101 @@ const ColorField = ({ label, value, onChange }: { label: string; value: string; 
 };
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
+const InspectorSection = ({
+  title,
+  children,
+  defaultOpen = false,
+  badge,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+}) => {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div
+      style={{
+        border: "1px solid #e1e3e5",
+        borderRadius: 12,
+        background: "#fff",
+        overflow: "hidden",
+        boxShadow: "0 1px 0 rgba(0, 0, 0, 0.02)",
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "12px 14px",
+          border: 0,
+          background: "#fafafa",
+          cursor: "pointer",
+          textAlign: "left",
+          userSelect: "none",
+        }}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+          style={{
+            flex: "0 0 16px",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 120ms ease",
+          }}
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span
+          style={{
+            flex: "1 1 auto",
+            minWidth: 0,
+            color: "#202223",
+            fontSize: 13,
+            fontWeight: 650,
+            lineHeight: "18px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {title}
+        </span>
+        {badge && <span style={{ flex: "0 0 auto" }}>{badge}</span>}
+      </button>
+      {open && (
+        <Box padding="300" borderBlockStartWidth="025" borderColor="border-secondary">
+          <BlockStack gap="300">{children}</BlockStack>
+        </Box>
+      )}
+    </div>
+  );
+};
+
 const createEditorId = (prefix: string) => {
   const uuid = globalThis.crypto?.randomUUID?.();
   return uuid ? `${prefix}-${uuid}` : `${prefix}-${Date.now()}`;
+};
+
+const iconLabel = (icon?: string) => {
+  const animatedIcon = getAnimatedIconByIconId(icon);
+  if (animatedIcon) return `Animated ${animatedIcon.name}`;
+  return icon || "";
 };
 
 const defaultStepItems = (palette: TemplatePalette): StepItemConfig[] => [
@@ -210,24 +303,6 @@ const blockLabels: Record<string, string> = {
   html: "HTML",
   policy: "Policy",
 };
-
-const lordiconPresetOptions = [
-  { label: "Auto from current icon", value: "auto" },
-  { label: "Shopping cart", value: "cart" },
-  { label: "Shopping bag", value: "bag" },
-  { label: "Package / box", value: "package" },
-  { label: "Delivery truck", value: "truck" },
-  { label: "Map pin", value: "map_pin" },
-  { label: "Home", value: "home" },
-  { label: "Shield", value: "shield" },
-  { label: "Clock", value: "clock" },
-  { label: "Rocket", value: "rocket" },
-  { label: "Heart", value: "heart" },
-  { label: "Store", value: "store" },
-  { label: "Online order", value: "monitor" },
-  { label: "Promo tag", value: "tag" },
-  { label: "Custom URL", value: "custom" },
-];
 
 const lordiconTriggerOptions = [
   { label: "Loop", value: "loop" },
@@ -303,8 +378,14 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
 // ─── Action ──────────────────────────────────────────────────────────────────
 export const action = async ({ params, request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
   const formData = await request.formData();
   const id = params.id;
+  const saveAsDesign =
+    url.searchParams.get("saveAsDesign") === "1" || formData.get("saveAsDesign") === "true";
+  const sourceDesignId = String(
+    formData.get("sourceDesignId") || url.searchParams.get("sourceDesignId") || "",
+  ).trim();
   const name = String(formData.get("name"));
   const isActive = formData.get("isActive") === "true";
   const widgetStyle = String(formData.get("widgetStyle"));
@@ -358,6 +439,50 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
     return routerData({ success: true, newId: newWidget.id });
   }
 
+  if (saveAsDesign) {
+    await prisma.widget.updateMany({
+      where: { id, shop: session.shop },
+      data,
+    });
+
+    const savedDesign = await prisma.widget.create({
+      data: {
+        ...data,
+        name: name.trim() || "Custom Design",
+        isDefault: false,
+      },
+    });
+
+    return routerData({ success: true, newId: savedDesign.id, savedAsDesign: true });
+  }
+
+  if (sourceDesignId) {
+    const sourceDesign = await prisma.widget.findFirst({
+      where: { id: sourceDesignId, shop: session.shop, isDefault: false },
+      select: { id: true },
+    });
+
+    if (!sourceDesign) {
+      return routerData({ error: "Source design not found" }, { status: 404 });
+    }
+
+    await prisma.$transaction([
+      prisma.widget.updateMany({
+        where: { id, shop: session.shop },
+        data,
+      }),
+      prisma.widget.update({
+        where: { id: sourceDesign.id },
+        data: {
+          ...data,
+          isDefault: false,
+        },
+      }),
+    ]);
+
+    return routerData({ success: true, newId: sourceDesign.id, updatedSourceDesign: true });
+  }
+
   await prisma.widget.updateMany({
     where: { id, shop: session.shop },
     data,
@@ -368,11 +493,15 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
 
 export default function VisualBuilderStudio() {
   const { widget } = useLoaderData<typeof loader>();
+  const location = useLocation();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
   const actionData = useActionData<any>();
   const isSaving = navigation.state === "submitting";
+  const editorSearchParams = new URLSearchParams(location.search);
+  const shouldSaveAsDesign = editorSearchParams.get("saveAsDesign") === "1";
+  const sourceDesignId = editorSearchParams.get("sourceDesignId") || "";
 
   useEffect(() => {
     if (actionData?.success && actionData?.newId) {
@@ -438,9 +567,11 @@ export default function VisualBuilderStudio() {
     formData.append("targetCountries", JSON.stringify(targetCountries));
     formData.append("targetProducts", JSON.stringify(targetProducts));
     formData.append("targetTags", JSON.stringify(targetTags));
+    formData.append("saveAsDesign", String(shouldSaveAsDesign));
+    formData.append("sourceDesignId", sourceDesignId);
     
     submit(formData, { method: "post" });
-  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, submit]);
+  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, shouldSaveAsDesign, sourceDesignId, submit]);
 
   const addBlock = (type: string) => {
     const id = createEditorId("block");
@@ -479,7 +610,6 @@ export default function VisualBuilderStudio() {
       defaultSettings.icon = "truck";
       defaultSettings.iconPosition = "left";
       defaultSettings.align = "left";
-      defaultSettings.fontSize = "md";
       defaultSettings.fontWeight = "700";
       defaultSettings.padding = 12;
       defaultSettings.iconSize = 24;
@@ -542,6 +672,25 @@ export default function VisualBuilderStudio() {
 
   const getBlockSettings = (blockId: string) =>
     blocks.find((b) => b.id === blockId)?.settings || {};
+
+  const getIconPickerCurrentIcon = () => {
+    if (!iconPickerTarget.blockId) return undefined;
+    const field = iconPickerTarget.field || "icon";
+    const settings = getBlockSettings(iconPickerTarget.blockId);
+    if (field.startsWith("stepItem:")) {
+      const itemId = field.slice("stepItem:".length);
+      return normalizeStepItems(settings).find((item) => item.id === itemId)?.icon;
+    }
+    if (field.startsWith("trustBadge:")) {
+      const badgeId = field.slice("trustBadge:".length);
+      return normalizeTrustBadges(settings).find((badge) => badge.id === badgeId)?.icon;
+    }
+    if (field.startsWith("policyItem:")) {
+      const itemId = field.slice("policyItem:".length);
+      return normalizePolicyItems(settings).find((item) => item.id === itemId)?.icon;
+    }
+    return String(settings[field] || "");
+  };
 
   const updateStepItem = (blockId: string, itemId: string, patch: Partial<StepItemConfig>) => {
     const items = normalizeStepItems(getBlockSettings(blockId)).map((item) =>
@@ -659,6 +808,104 @@ export default function VisualBuilderStudio() {
 
   const getActiveBlock = () => blocks.find(b => b.id === activeBlockId);
 
+  const getAnimatedIconsInSettings = (settings: any) => {
+    const animatedIcons = [
+      getAnimatedIconByIconId(settings.icon),
+      getAnimatedIconByIconId(settings.leftIcon),
+      getAnimatedIconByIconId(settings.rightIcon),
+      ...normalizeStepItems(settings).map((item) => getAnimatedIconByIconId(item.icon)),
+      ...normalizePolicyItems(settings).map((item) => getAnimatedIconByIconId(item.icon)),
+      ...normalizeTrustBadges(settings).map((badge) => getAnimatedIconByIconId(badge.icon)),
+    ].filter((icon): icon is NonNullable<typeof icon> => Boolean(icon));
+
+    return animatedIcons.filter(
+      (icon, index, list) => list.findIndex((item) => item.fileKey === icon.fileKey) === index,
+    );
+  };
+
+  const renderAnimatedIconControls = (
+    blockId: string,
+    settings: any,
+    options: { showEmpty?: boolean; title?: string } = {},
+  ) => {
+    const uniqueAnimatedIcons = getAnimatedIconsInSettings(settings);
+    const hasAnimatedIcons = uniqueAnimatedIcons.length > 0;
+
+    if (!hasAnimatedIcons) {
+      if (!options.showEmpty) return null;
+      return (
+        <Box padding="400" background="bg-fill-secondary" borderRadius="200">
+          <BlockStack gap="200">
+            <Text variant="bodySm" fontWeight="bold" alignment="center" as="p">
+              No animated icons in this layer
+            </Text>
+            <Text variant="bodySm" tone="subdued" alignment="center" as="p">
+              Use the icon picker in this layer and choose an icon from the Animated Icons tab.
+            </Text>
+          </BlockStack>
+        </Box>
+      );
+    }
+
+    return (
+      <Box padding="300" background="bg-fill-secondary" borderRadius="200">
+        <BlockStack gap="300">
+          <InlineStack align="space-between" blockAlign="center">
+            <BlockStack gap="050">
+              <Text variant="bodySm" fontWeight="bold" as="p">
+                {options.title || "Animated Icon Settings"}
+              </Text>
+              <Text variant="bodySm" tone="subdued" as="p">
+                {uniqueAnimatedIcons.map((icon) => icon.name).join(", ")}
+              </Text>
+            </BlockStack>
+            <Badge tone="success">{`${uniqueAnimatedIcons.length} animated`}</Badge>
+          </InlineStack>
+
+          <InlineStack gap="200">
+            <div style={{ flex: 1 }}>
+              <Select
+                label="Trigger"
+                options={lordiconTriggerOptions}
+                value={settings.lordiconTrigger === "loop-on-hover" ? "loop" : settings.lordiconTrigger || "loop"}
+                onChange={(v) => updateBlockSettings(blockId, { lordiconTrigger: v })}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Select
+                label="Stroke"
+                options={lordiconStrokeOptions}
+                value={settings.lordiconStroke || "regular"}
+                onChange={(v) => updateBlockSettings(blockId, { lordiconStroke: v })}
+              />
+            </div>
+          </InlineStack>
+
+          <RangeSlider
+            label="Animation Size"
+            min={12}
+            max={96}
+            value={Number(settings.lordiconSize ?? settings.iconSize ?? 32)}
+            onChange={(v) => updateBlockSettings(blockId, { lordiconSize: Number(v) })}
+            output
+          />
+          <RangeSlider
+            label="Playback Speed"
+            min={0.25}
+            max={3}
+            step={0.25}
+            value={Number(settings.lordiconSpeed ?? 1)}
+            onChange={(v) => updateBlockSettings(blockId, { lordiconSpeed: Number(v) })}
+            output
+          />
+
+          <ColorField label="Primary Color" value={settings.lordiconPrimaryColor || iconColor} onChange={(v) => updateBlockSettings(blockId, { lordiconPrimaryColor: v })} />
+          <ColorField label="Secondary Color" value={settings.lordiconSecondaryColor || textColor} onChange={(v) => updateBlockSettings(blockId, { lordiconSecondaryColor: v })} />
+        </BlockStack>
+      </Box>
+    );
+  };
+
   const renderBlockEditor = () => {
     const activeBlock = getActiveBlock();
     if (!activeBlock) {
@@ -677,44 +924,50 @@ export default function VisualBuilderStudio() {
 
     return (
       <BlockStack gap="400">
-        <InlineStack align="space-between">
-          <Text variant="headingMd" as="h3">Edit {getBlockLabel(type)}</Text>
-          <Button variant="tertiary" tone="critical" icon={DeleteIcon} onClick={() => removeBlock(id)} />
-        </InlineStack>
-        
-        <Divider />
+        <div style={{ paddingBottom: 12, borderBottom: "1px solid #e1e3e5" }}>
+          <InlineStack align="space-between" blockAlign="center">
+            <BlockStack gap="050">
+              <Text variant="bodySm" tone="subdued" as="p">SELECTED LAYER</Text>
+              <Text variant="headingMd" as="h3">{getBlockLabel(type)}</Text>
+            </BlockStack>
+            <Button variant="tertiary" tone="critical" icon={DeleteIcon} onClick={() => removeBlock(id)} />
+          </InlineStack>
+        </div>
+
+        {renderAnimatedIconControls(id, s)}
 
         {type === 'header' && (
           <BlockStack gap="300">
-            <TextField label="Text Content" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" multiline={2} />
-            <TextField label="Sub-text" value={s.subText || ""} onChange={(v) => updateBlockSettings(id, { subText: v })} autoComplete="off" />
-            <InlineStack gap="200">
-               <div style={{ flex: 1 }}><Select label="Font Size" options={[{label:'Small',value:'sm'},{label:'Medium',value:'md'},{label:'Large',value:'lg'}]} value={s.fontSize || 'md'} onChange={(v) => updateBlockSettings(id, { fontSize: v })} /></div>
-               <div style={{ flex: 1 }}><Select label="Weight" options={[{label:'Normal',value:'400'},{label:'Bold',value:'700'},{label:'Black',value:'900'}]} value={s.fontWeight || '700'} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} /></div>
-            </InlineStack>
-            <RangeSlider label="Title Size" min={10} max={32} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
-            <RangeSlider label="Sub-text Size" min={9} max={24} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
-            <RangeSlider label="Text Gap" min={0} max={24} value={Number(s.textGap ?? 2)} onChange={(v) => updateBlockSettings(id, { textGap: Number(v) })} output />
-            <InlineStack gap="200">
-               <div style={{ flex: 1 }}><Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'},{label:'Right',value:'right'}]} value={s.align || 'center'} onChange={(v) => updateBlockSettings(id, { align: v })} /></div>
-               <div style={{ flex: 1 }}><Select label="Icon Position" options={[{label:'Top',value:'top'},{label:'Bottom',value:'bottom'},{label:'Left',value:'left'},{label:'Right',value:'right'}]} value={s.iconPosition || 'top'} onChange={(v) => updateBlockSettings(id, { iconPosition: v })} /></div>
-            </InlineStack>
-            <Divider />
-            <Text variant="bodySm" fontWeight="bold" as="p">Part Colors</Text>
-            <ColorField label="Title Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
-            <ColorField label="Sub-text Color" value={s.subTextColor || ""} onChange={(v) => updateBlockSettings(id, { subTextColor: v })} />
-            <ColorField label="Icon Color" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
-            <ColorField label="Background Fill" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
-            <Divider />
-            <Text variant="bodySm" fontWeight="bold" as="p">Shapes & Visuals</Text>
-            <RangeSlider label="Icon Size" min={12} max={48} value={s.iconSize ?? 24} onChange={(v) => updateBlockSettings(id, { iconSize: v })} output />
-            <RangeSlider label="Border Width" min={0} max={10} value={s.borderWidth ?? 0} onChange={(v) => updateBlockSettings(id, { borderWidth: v })} output />
-            <RangeSlider label="Padding" min={0} max={40} value={s.padding ?? 8} onChange={(v) => updateBlockSettings(id, { padding: v })} output />
-            <RangeSlider label="Rounding" min={0} max={100} value={s.borderRadius ?? 0} onChange={(v) => updateBlockSettings(id, { borderRadius: v })} output />
-            <ColorField label="Border Color Override" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
-            <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
-              {s.icon ? `Change Icon: ${s.icon}` : 'Add Icon to Header'}
-            </Button>
+            <InspectorSection title="Content" defaultOpen>
+              <TextField label="Text Content" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" multiline={2} />
+              <TextField label="Sub-text" value={s.subText || ""} onChange={(v) => updateBlockSettings(id, { subText: v })} autoComplete="off" />
+              <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
+                {s.icon ? `Change Icon: ${iconLabel(s.icon)}` : 'Add Icon to Header'}
+              </Button>
+            </InspectorSection>
+            <InspectorSection title="Typography & layout">
+              <Select label="Weight" options={[{label:'Normal',value:'400'},{label:'Bold',value:'700'},{label:'Black',value:'900'}]} value={s.fontWeight || '700'} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
+              <RangeSlider label="Title Size" min={10} max={32} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+              <RangeSlider label="Sub-text Size" min={9} max={24} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
+              <RangeSlider label="Text Gap" min={0} max={24} value={Number(s.textGap ?? 2)} onChange={(v) => updateBlockSettings(id, { textGap: Number(v) })} output />
+              <InlineStack gap="200">
+                 <div style={{ flex: 1 }}><Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'},{label:'Right',value:'right'}]} value={s.align || 'center'} onChange={(v) => updateBlockSettings(id, { align: v })} /></div>
+                 <div style={{ flex: 1 }}><Select label="Icon Position" options={[{label:'Top',value:'top'},{label:'Bottom',value:'bottom'},{label:'Left',value:'left'},{label:'Right',value:'right'}]} value={s.iconPosition || 'top'} onChange={(v) => updateBlockSettings(id, { iconPosition: v })} /></div>
+              </InlineStack>
+            </InspectorSection>
+            <InspectorSection title="Colors">
+              <ColorField label="Title Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
+              <ColorField label="Sub-text Color" value={s.subTextColor || ""} onChange={(v) => updateBlockSettings(id, { subTextColor: v })} />
+              <ColorField label="Icon Color" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
+              <ColorField label="Background Fill" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+              <ColorField label="Border Color Override" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+            </InspectorSection>
+            <InspectorSection title="Shape">
+              <RangeSlider label="Icon Size" min={12} max={48} value={s.iconSize ?? 24} onChange={(v) => updateBlockSettings(id, { iconSize: v })} output />
+              <RangeSlider label="Border Width" min={0} max={10} value={s.borderWidth ?? 0} onChange={(v) => updateBlockSettings(id, { borderWidth: v })} output />
+              <RangeSlider label="Padding" min={0} max={40} value={s.padding ?? 8} onChange={(v) => updateBlockSettings(id, { padding: v })} output />
+              <RangeSlider label="Rounding" min={0} max={100} value={s.borderRadius ?? 0} onChange={(v) => updateBlockSettings(id, { borderRadius: v })} output />
+            </InspectorSection>
           </BlockStack>
         )}
 
@@ -773,9 +1026,7 @@ export default function VisualBuilderStudio() {
                       )}
                     </InlineStack>
                   </InlineStack>
-                  <Divider />
-                  <Text variant="bodySm" fontWeight="bold" as="p">Visual Styling</Text>
-                  <BlockStack gap="400">
+                  <InspectorSection title="Layout & typography" defaultOpen>
                     <div style={{ touchAction: 'none' }}>
                       <RangeSlider 
                         label="Icon Size" min={12} max={48} 
@@ -819,9 +1070,13 @@ export default function VisualBuilderStudio() {
                     <RangeSlider label="Label Size" min={10} max={24} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
                     <RangeSlider label="Sub-text Size" min={9} max={20} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
                     <RangeSlider label="Dot Border Width" min={0} max={8} value={Number(s.dotBorderWidth ?? 2)} onChange={(v) => updateBlockSettings(id, { dotBorderWidth: Number(v) })} output />
-                  </BlockStack>
-                  <Divider />
+                  </InspectorSection>
                 
+                <InspectorSection
+                  title="Step content"
+                  defaultOpen
+                  badge={<Badge tone="info">{`${normalizeStepItems(s).length} steps`}</Badge>}
+                >
                 {normalizeStepItems(s).map((item, index, items) => (
                   <div key={item.id} style={{ position: 'relative', zIndex: items.length - index }}>
                     <Card padding="300">
@@ -847,14 +1102,16 @@ export default function VisualBuilderStudio() {
                           autoComplete="off"
                         />
                         <Button onClick={() => setIconPickerTarget({ blockId: id, field: `stepItem:${item.id}`, open: true })}>
-                          {item.icon ? `Icon: ${item.icon}` : 'Pick Icon'}
+                          {item.icon ? `Icon: ${iconLabel(item.icon)}` : 'Pick Icon'}
                         </Button>
-                        <ColorField label="Step Background" value={item.bgColor || ""} onChange={(v) => updateStepItem(id, item.id, { bgColor: v })} />
-                        <ColorField label="Dot Background" value={item.dotColor || ""} onChange={(v) => updateStepItem(id, item.id, { dotColor: v })} />
-                        <ColorField label="Icon Color" value={item.iconColor || ""} onChange={(v) => updateStepItem(id, item.id, { iconColor: v })} />
-                        <ColorField label="Label Color" value={item.labelColor || ""} onChange={(v) => updateStepItem(id, item.id, { labelColor: v })} />
-                        <ColorField label="Sub-text Color" value={item.subTextColor || ""} onChange={(v) => updateStepItem(id, item.id, { subTextColor: v })} />
-                        <ColorField label="Border Color" value={item.borderColor || ""} onChange={(v) => updateStepItem(id, item.id, { borderColor: v })} />
+                        <InspectorSection title="Step colors">
+                          <ColorField label="Step Background" value={item.bgColor || ""} onChange={(v) => updateStepItem(id, item.id, { bgColor: v })} />
+                          <ColorField label="Dot Background" value={item.dotColor || ""} onChange={(v) => updateStepItem(id, item.id, { dotColor: v })} />
+                          <ColorField label="Icon Color" value={item.iconColor || ""} onChange={(v) => updateStepItem(id, item.id, { iconColor: v })} />
+                          <ColorField label="Label Color" value={item.labelColor || ""} onChange={(v) => updateStepItem(id, item.id, { labelColor: v })} />
+                          <ColorField label="Sub-text Color" value={item.subTextColor || ""} onChange={(v) => updateStepItem(id, item.id, { subTextColor: v })} />
+                          <ColorField label="Border Color" value={item.borderColor || ""} onChange={(v) => updateStepItem(id, item.id, { borderColor: v })} />
+                        </InspectorSection>
                       </BlockStack>
                     </Card>
                   </div>
@@ -862,6 +1119,7 @@ export default function VisualBuilderStudio() {
                 <Button icon={PlusIcon} onClick={() => addStepItem(id)} disabled={normalizeStepItems(s).length >= 6}>
                   Add step
                 </Button>
+                </InspectorSection>
               </BlockStack>
             )}
           </BlockStack>
@@ -869,245 +1127,292 @@ export default function VisualBuilderStudio() {
 
         {type === 'promise_card' && (
           <BlockStack gap="300">
-            <TextField label="Title" value={s.title || ""} onChange={(v) => updateBlockSettings(id, { title: v })} autoComplete="off" />
-            <TextField label="Subtitle" value={s.subtitle || ""} onChange={(v) => updateBlockSettings(id, { subtitle: v })} autoComplete="off" multiline={2} />
-            <TextField label="Badge text" value={s.badgeText || ""} onChange={(v) => updateBlockSettings(id, { badgeText: v })} autoComplete="off" />
-            <InlineStack gap="200">
-              <div style={{ flex: 1 }}>
-                <Select
-                  label="Tone"
-                  options={[
-                    { label: "Success", value: "success" },
-                    { label: "Info", value: "info" },
-                    { label: "Warning", value: "warning" },
-                    { label: "Premium", value: "premium" },
-                  ]}
-                  value={s.tone || "success"}
-                  onChange={(v) => updateBlockSettings(id, { tone: v })}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <Select
-                  label="Alignment"
-                  options={[
-                    { label: "Left", value: "left" },
-                    { label: "Center", value: "center" },
-                    { label: "Right", value: "right" },
-                  ]}
-                  value={s.align || "left"}
-                  onChange={(v) => updateBlockSettings(id, { align: v })}
-                />
-              </div>
-            </InlineStack>
-            <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
-              {s.icon ? `Icon: ${s.icon}` : "Pick Icon"}
-            </Button>
-            <ColorField label="Background" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
-            <ColorField label="Border" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
-            <ColorField label="Title Color" value={s.titleColor || s.textColor || ""} onChange={(v) => updateBlockSettings(id, { titleColor: v })} />
-            <ColorField label="Subtitle Color" value={s.subtitleColor || ""} onChange={(v) => updateBlockSettings(id, { subtitleColor: v })} />
-            <ColorField label="Icon" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
-            <ColorField label="Icon Background" value={s.iconBgColor || ""} onChange={(v) => updateBlockSettings(id, { iconBgColor: v })} />
-            <ColorField label="Badge Background" value={s.badgeBgColor || ""} onChange={(v) => updateBlockSettings(id, { badgeBgColor: v })} />
-            <ColorField label="Badge Text" value={s.badgeTextColor || ""} onChange={(v) => updateBlockSettings(id, { badgeTextColor: v })} />
-            <RangeSlider label="Icon Size" min={12} max={48} value={Number(s.iconSize ?? 24)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
-            <RangeSlider label="Icon Box Size" min={28} max={72} value={Number(s.iconBoxSize ?? 42)} onChange={(v) => updateBlockSettings(id, { iconBoxSize: Number(v) })} output />
-            <RangeSlider label="Icon Box Radius" min={0} max={80} value={Number(s.iconBoxRadius ?? 40)} onChange={(v) => updateBlockSettings(id, { iconBoxRadius: Number(v) })} output />
-            <RangeSlider label="Title Size" min={10} max={26} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
-            <RangeSlider label="Subtitle Size" min={9} max={20} value={Number(s.subtitleFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subtitleFontSize: Number(v) })} output />
-            <RangeSlider label="Badge Size" min={9} max={18} value={Number(s.badgeFontSize ?? 11)} onChange={(v) => updateBlockSettings(id, { badgeFontSize: Number(v) })} output />
-            <RangeSlider label="Badge Radius" min={0} max={80} value={Number(s.badgeRadius ?? 32)} onChange={(v) => updateBlockSettings(id, { badgeRadius: Number(v) })} output />
-            <RangeSlider label="Gap" min={0} max={28} value={Number(s.gap ?? 12)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
-            <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
-            <RangeSlider label="Card Padding" min={8} max={40} value={Number(s.padding ?? 14)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
-            <RangeSlider label="Card Radius" min={0} max={40} value={Number(s.borderRadius ?? 14)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+            <InspectorSection title="Content" defaultOpen>
+              <TextField label="Title" value={s.title || ""} onChange={(v) => updateBlockSettings(id, { title: v })} autoComplete="off" />
+              <TextField label="Subtitle" value={s.subtitle || ""} onChange={(v) => updateBlockSettings(id, { subtitle: v })} autoComplete="off" multiline={2} />
+              <TextField label="Badge text" value={s.badgeText || ""} onChange={(v) => updateBlockSettings(id, { badgeText: v })} autoComplete="off" />
+              <InlineStack gap="200">
+                <div style={{ flex: 1 }}>
+                  <Select
+                    label="Tone"
+                    options={[
+                      { label: "Success", value: "success" },
+                      { label: "Info", value: "info" },
+                      { label: "Warning", value: "warning" },
+                      { label: "Premium", value: "premium" },
+                    ]}
+                    value={s.tone || "success"}
+                    onChange={(v) => updateBlockSettings(id, { tone: v })}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Select
+                    label="Alignment"
+                    options={[
+                      { label: "Left", value: "left" },
+                      { label: "Center", value: "center" },
+                      { label: "Right", value: "right" },
+                    ]}
+                    value={s.align || "left"}
+                    onChange={(v) => updateBlockSettings(id, { align: v })}
+                  />
+                </div>
+              </InlineStack>
+              <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
+                {s.icon ? `Icon: ${iconLabel(s.icon)}` : "Pick Icon"}
+              </Button>
+            </InspectorSection>
+            <InspectorSection title="Colors">
+              <ColorField label="Background" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+              <ColorField label="Border" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+              <ColorField label="Title Color" value={s.titleColor || s.textColor || ""} onChange={(v) => updateBlockSettings(id, { titleColor: v })} />
+              <ColorField label="Subtitle Color" value={s.subtitleColor || ""} onChange={(v) => updateBlockSettings(id, { subtitleColor: v })} />
+              <ColorField label="Icon" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
+              <ColorField label="Icon Background" value={s.iconBgColor || ""} onChange={(v) => updateBlockSettings(id, { iconBgColor: v })} />
+              <ColorField label="Badge Background" value={s.badgeBgColor || ""} onChange={(v) => updateBlockSettings(id, { badgeBgColor: v })} />
+              <ColorField label="Badge Text" value={s.badgeTextColor || ""} onChange={(v) => updateBlockSettings(id, { badgeTextColor: v })} />
+            </InspectorSection>
+            <InspectorSection title="Sizing & spacing">
+              <RangeSlider label="Icon Size" min={12} max={48} value={Number(s.iconSize ?? 24)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+              <RangeSlider label="Icon Box Size" min={28} max={72} value={Number(s.iconBoxSize ?? 42)} onChange={(v) => updateBlockSettings(id, { iconBoxSize: Number(v) })} output />
+              <RangeSlider label="Icon Box Radius" min={0} max={80} value={Number(s.iconBoxRadius ?? 40)} onChange={(v) => updateBlockSettings(id, { iconBoxRadius: Number(v) })} output />
+              <RangeSlider label="Title Size" min={10} max={26} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+              <RangeSlider label="Subtitle Size" min={9} max={20} value={Number(s.subtitleFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subtitleFontSize: Number(v) })} output />
+              <RangeSlider label="Badge Size" min={9} max={18} value={Number(s.badgeFontSize ?? 11)} onChange={(v) => updateBlockSettings(id, { badgeFontSize: Number(v) })} output />
+              <RangeSlider label="Badge Radius" min={0} max={80} value={Number(s.badgeRadius ?? 32)} onChange={(v) => updateBlockSettings(id, { badgeRadius: Number(v) })} output />
+              <RangeSlider label="Gap" min={0} max={28} value={Number(s.gap ?? 12)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
+              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              <RangeSlider label="Card Padding" min={8} max={40} value={Number(s.padding ?? 14)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
+              <RangeSlider label="Card Radius" min={0} max={40} value={Number(s.borderRadius ?? 14)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+            </InspectorSection>
           </BlockStack>
         )}
 
         {type === 'timer' && (
            <BlockStack gap="300">
-              <TextField label="Remaining Text" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" />
-              <ColorField label="Timer Background" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
-              <ColorField label="Dot Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
-              <ColorField label="Text Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
-              <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
-              <RangeSlider label="Dot Size" min={6} max={24} value={Number(s.dotSize ?? 9)} onChange={(v) => updateBlockSettings(id, { dotSize: Number(v) })} output />
-              <RangeSlider label="Text Size" min={10} max={24} value={Number(s.fontSize ?? 13)} onChange={(v) => updateBlockSettings(id, { fontSize: Number(v) })} output />
-              <Select label="Text Weight" options={[{label:'Normal',value:'400'},{label:'Medium',value:'500'},{label:'Bold',value:'700'}]} value={String(s.fontWeight || '500')} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
-              <RangeSlider label="Padding" min={4} max={32} value={Number(s.padding ?? 10)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
-              <RangeSlider label="Radius" min={0} max={40} value={Number(s.borderRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
-              <RangeSlider label="Gap" min={0} max={24} value={Number(s.gap ?? 10)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
-              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
-              <InlineStack align="space-between" blockAlign="center">
-                 <Text variant="bodyMd" as="p">Pulse Animation</Text>
-                 <Button variant="secondary" pressed={s.animate !== false} onClick={() => updateBlockSettings(id, { animate: s.animate === false })}>
-                   {s.animate !== false ? 'Enabled' : 'Disabled'}
-                 </Button>
-              </InlineStack>
+              <InspectorSection title="Content" defaultOpen>
+                <TextField label="Remaining Text" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" />
+                <InlineStack align="space-between" blockAlign="center">
+                   <Text variant="bodyMd" as="p">Pulse Animation</Text>
+                   <Button variant="secondary" pressed={s.animate !== false} onClick={() => updateBlockSettings(id, { animate: s.animate === false })}>
+                     {s.animate !== false ? 'Enabled' : 'Disabled'}
+                   </Button>
+                </InlineStack>
+              </InspectorSection>
+              <InspectorSection title="Colors">
+                <ColorField label="Timer Background" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+                <ColorField label="Dot Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
+                <ColorField label="Text Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
+                <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+              </InspectorSection>
+              <InspectorSection title="Sizing & spacing">
+                <RangeSlider label="Dot Size" min={6} max={24} value={Number(s.dotSize ?? 9)} onChange={(v) => updateBlockSettings(id, { dotSize: Number(v) })} output />
+                <RangeSlider label="Text Size" min={10} max={24} value={Number(s.fontSize ?? 13)} onChange={(v) => updateBlockSettings(id, { fontSize: Number(v) })} output />
+                <Select label="Text Weight" options={[{label:'Normal',value:'400'},{label:'Medium',value:'500'},{label:'Bold',value:'700'}]} value={String(s.fontWeight || '500')} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
+                <RangeSlider label="Padding" min={4} max={32} value={Number(s.padding ?? 10)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
+                <RangeSlider label="Radius" min={0} max={40} value={Number(s.borderRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+                <RangeSlider label="Gap" min={0} max={24} value={Number(s.gap ?? 10)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
+                <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              </InspectorSection>
            </BlockStack>
         )}
 
         {type === 'banner' && (
            <BlockStack gap="300">
-              <Select label="Theme" options={[{label:'Info',value:'info'},{label:'Success',value:'success'},{label:'Warning',value:'warning'},{label:'Error',value:'error'}]} value={s.type || 'info'} onChange={(v) => updateBlockSettings(id, { type: v })} />
-              <Select label="Style" options={[{label:'Light Solid',value:'solid'},{label:'Gradient',value:'gradient'},{label:'Outline',value:'outline'}]} value={s.styleType || 'solid'} onChange={(v) => updateBlockSettings(id, { styleType: v })} />
-              <Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'}]} value={s.align || 'left'} onChange={(v) => updateBlockSettings(id, { align: v })} />
-              <TextField label="Message" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" />
-              <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
-                {s.icon ? `Icon: ${s.icon}` : 'Select Icon'}
-              </Button>
-              <ColorField label="Background Override" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
-              <ColorField label="Text Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
-              <ColorField label="Icon Color" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
-              <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
-              <RangeSlider label="Icon Size" min={12} max={40} value={Number(s.iconSize ?? 20)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
-              <RangeSlider label="Text Size" min={10} max={24} value={Number(s.fontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { fontSize: Number(v) })} output />
-              <Select label="Text Weight" options={[{label:'Normal',value:'400'},{label:'Medium',value:'500'},{label:'Bold',value:'700'}]} value={String(s.fontWeight || '400')} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
-              <RangeSlider label="Padding" min={6} max={32} value={Number(s.padding ?? 12)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
-              <RangeSlider label="Radius" min={0} max={32} value={Number(s.borderRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
-              <RangeSlider label="Gap" min={0} max={24} value={Number(s.gap ?? 12)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
-              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              <InspectorSection title="Content" defaultOpen>
+                <TextField label="Message" value={s.text || ""} onChange={(v) => updateBlockSettings(id, { text: v })} autoComplete="off" />
+                <InlineStack gap="200">
+                  <div style={{ flex: 1 }}><Select label="Theme" options={[{label:'Info',value:'info'},{label:'Success',value:'success'},{label:'Warning',value:'warning'},{label:'Error',value:'error'}]} value={s.type || 'info'} onChange={(v) => updateBlockSettings(id, { type: v })} /></div>
+                  <div style={{ flex: 1 }}><Select label="Style" options={[{label:'Light Solid',value:'solid'},{label:'Gradient',value:'gradient'},{label:'Outline',value:'outline'}]} value={s.styleType || 'solid'} onChange={(v) => updateBlockSettings(id, { styleType: v })} /></div>
+                </InlineStack>
+                <Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'}]} value={s.align || 'left'} onChange={(v) => updateBlockSettings(id, { align: v })} />
+                <Button onClick={() => setIconPickerTarget({ blockId: id, field: "icon", open: true })}>
+                  {s.icon ? `Icon: ${iconLabel(s.icon)}` : 'Select Icon'}
+                </Button>
+              </InspectorSection>
+              <InspectorSection title="Colors">
+                <ColorField label="Background Override" value={s.bgColor || ""} onChange={(v) => updateBlockSettings(id, { bgColor: v })} />
+                <ColorField label="Text Color" value={s.textColor || ""} onChange={(v) => updateBlockSettings(id, { textColor: v })} />
+                <ColorField label="Icon Color" value={s.iconColor || ""} onChange={(v) => updateBlockSettings(id, { iconColor: v })} />
+                <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+              </InspectorSection>
+              <InspectorSection title="Sizing & spacing">
+                <RangeSlider label="Icon Size" min={12} max={40} value={Number(s.iconSize ?? 20)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+                <RangeSlider label="Text Size" min={10} max={24} value={Number(s.fontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { fontSize: Number(v) })} output />
+                <Select label="Text Weight" options={[{label:'Normal',value:'400'},{label:'Medium',value:'500'},{label:'Bold',value:'700'}]} value={String(s.fontWeight || '400')} onChange={(v) => updateBlockSettings(id, { fontWeight: v })} />
+                <RangeSlider label="Padding" min={6} max={32} value={Number(s.padding ?? 12)} onChange={(v) => updateBlockSettings(id, { padding: Number(v) })} output />
+                <RangeSlider label="Radius" min={0} max={32} value={Number(s.borderRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+                <RangeSlider label="Gap" min={0} max={24} value={Number(s.gap ?? 12)} onChange={(v) => updateBlockSettings(id, { gap: Number(v) })} output />
+                <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              </InspectorSection>
            </BlockStack>
         )}
 
         {type === 'policy_accordion' && (
           <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="center">
-              <Text variant="bodyMd" as="p">Open first item</Text>
-              <Button variant="secondary" pressed={s.openFirst !== false} onClick={() => updateBlockSettings(id, { openFirst: s.openFirst === false })}>
-                {s.openFirst !== false ? "Enabled" : "Disabled"}
-              </Button>
-            </InlineStack>
-            <Divider />
-            {normalizePolicyItems(s).map((item, index, items) => (
-              <Card key={item.id} padding="300">
-                <BlockStack gap="200">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="bodySm" fontWeight="bold" as="p">Policy {index + 1}</Text>
-                    <InlineStack gap="100">
-                      <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => movePolicyItem(id, index, "up")} />
-                      <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === items.length - 1} onClick={() => movePolicyItem(id, index, "down")} />
-                      <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={items.length <= 1} onClick={() => removePolicyItem(id, item.id)} />
+            <InspectorSection title="Behavior" defaultOpen>
+              <InlineStack align="space-between" blockAlign="center">
+                <Text variant="bodyMd" as="p">Open first item</Text>
+                <Button variant="secondary" pressed={s.openFirst !== false} onClick={() => updateBlockSettings(id, { openFirst: s.openFirst === false })}>
+                  {s.openFirst !== false ? "Enabled" : "Disabled"}
+                </Button>
+              </InlineStack>
+            </InspectorSection>
+            <InspectorSection
+              title="Policy items"
+              defaultOpen
+              badge={<Badge tone="info">{`${normalizePolicyItems(s).length} items`}</Badge>}
+            >
+              {normalizePolicyItems(s).map((item, index, items) => (
+                <Card key={item.id} padding="300">
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="bodySm" fontWeight="bold" as="p">Policy {index + 1}</Text>
+                      <InlineStack gap="100">
+                        <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => movePolicyItem(id, index, "up")} />
+                        <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === items.length - 1} onClick={() => movePolicyItem(id, index, "down")} />
+                        <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={items.length <= 1} onClick={() => removePolicyItem(id, item.id)} />
+                      </InlineStack>
                     </InlineStack>
-                  </InlineStack>
-                  <TextField label="Title" value={item.title} onChange={(v) => updatePolicyItem(id, item.id, { title: v })} autoComplete="off" />
-                  <TextField label="Body" value={item.body} onChange={(v) => updatePolicyItem(id, item.id, { body: v })} autoComplete="off" multiline={3} />
-                  <Button onClick={() => setIconPickerTarget({ blockId: id, field: `policyItem:${item.id}`, open: true })}>
-                    {item.icon ? `Icon: ${item.icon}` : "Pick Icon"}
-                  </Button>
-                  <ColorField label="Item Background" value={item.bgColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { bgColor: v })} />
-                  <ColorField label="Item Border" value={item.borderColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { borderColor: v })} />
-                  <ColorField label="Icon Color" value={item.iconColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { iconColor: v })} />
-                  <ColorField label="Title Color" value={item.titleColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { titleColor: v })} />
-                  <ColorField label="Body Color" value={item.bodyColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { bodyColor: v })} />
-                </BlockStack>
-              </Card>
-            ))}
-            <Button icon={PlusIcon} onClick={() => addPolicyItem(id)} disabled={normalizePolicyItems(s).length >= 5}>
-              Add policy item
-            </Button>
-            <RangeSlider label="Item Radius" min={0} max={32} value={Number(s.itemRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { itemRadius: Number(v) })} output />
-            <RangeSlider label="Item Padding" min={8} max={28} value={Number(s.itemPadding ?? 12)} onChange={(v) => updateBlockSettings(id, { itemPadding: Number(v) })} output />
-            <RangeSlider label="Icon Size" min={10} max={32} value={Number(s.iconSize ?? 18)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
-            <RangeSlider label="Title Size" min={10} max={22} value={Number(s.titleFontSize ?? 13)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
-            <RangeSlider label="Body Size" min={9} max={18} value={Number(s.bodyFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { bodyFontSize: Number(v) })} output />
-            <RangeSlider label="Item Gap" min={4} max={24} value={Number(s.itemGap ?? 8)} onChange={(v) => updateBlockSettings(id, { itemGap: Number(v) })} output />
-            <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+                    <TextField label="Title" value={item.title} onChange={(v) => updatePolicyItem(id, item.id, { title: v })} autoComplete="off" />
+                    <TextField label="Body" value={item.body} onChange={(v) => updatePolicyItem(id, item.id, { body: v })} autoComplete="off" multiline={3} />
+                    <Button onClick={() => setIconPickerTarget({ blockId: id, field: `policyItem:${item.id}`, open: true })}>
+                      {item.icon ? `Icon: ${iconLabel(item.icon)}` : "Pick Icon"}
+                    </Button>
+                    <InspectorSection title="Policy colors">
+                      <ColorField label="Item Background" value={item.bgColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { bgColor: v })} />
+                      <ColorField label="Item Border" value={item.borderColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { borderColor: v })} />
+                      <ColorField label="Icon Color" value={item.iconColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { iconColor: v })} />
+                      <ColorField label="Title Color" value={item.titleColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { titleColor: v })} />
+                      <ColorField label="Body Color" value={item.bodyColor || ""} onChange={(v) => updatePolicyItem(id, item.id, { bodyColor: v })} />
+                    </InspectorSection>
+                  </BlockStack>
+                </Card>
+              ))}
+              <Button icon={PlusIcon} onClick={() => addPolicyItem(id)} disabled={normalizePolicyItems(s).length >= 5}>
+                Add policy item
+              </Button>
+            </InspectorSection>
+            <InspectorSection title="Sizing & spacing">
+              <RangeSlider label="Item Radius" min={0} max={32} value={Number(s.itemRadius ?? 12)} onChange={(v) => updateBlockSettings(id, { itemRadius: Number(v) })} output />
+              <RangeSlider label="Item Padding" min={8} max={28} value={Number(s.itemPadding ?? 12)} onChange={(v) => updateBlockSettings(id, { itemPadding: Number(v) })} output />
+              <RangeSlider label="Icon Size" min={10} max={32} value={Number(s.iconSize ?? 18)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+              <RangeSlider label="Title Size" min={10} max={22} value={Number(s.titleFontSize ?? 13)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+              <RangeSlider label="Body Size" min={9} max={18} value={Number(s.bodyFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { bodyFontSize: Number(v) })} output />
+              <RangeSlider label="Item Gap" min={4} max={24} value={Number(s.itemGap ?? 8)} onChange={(v) => updateBlockSettings(id, { itemGap: Number(v) })} output />
+              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+            </InspectorSection>
           </BlockStack>
         )}
 
         {type === 'dual_info' && (
            <BlockStack gap="400">
-              <Card padding="300">
-                 <BlockStack gap="200">
-                    <Text variant="bodySm" fontWeight="bold" as="p">Left Column</Text>
-                    <TextField label="Title" value={s.leftTitle || ""} onChange={(v) => updateBlockSettings(id, { leftTitle: v })} autoComplete="off" />
-                    <TextField label="Text" value={s.leftText || ""} onChange={(v) => updateBlockSettings(id, { leftText: v })} autoComplete="off" multiline={2} />
-                    <Button onClick={() => setIconPickerTarget({ blockId: id, field: "leftIcon", open: true })}>Icon: {s.leftIcon || 'monitor'}</Button>
-                    <ColorField label="Card Background" value={s.leftBgColor || ""} onChange={(v) => updateBlockSettings(id, { leftBgColor: v })} />
-                    <ColorField label="Title Color" value={s.leftTitleColor || ""} onChange={(v) => updateBlockSettings(id, { leftTitleColor: v })} />
-                    <ColorField label="Text Color" value={s.leftTextColor || ""} onChange={(v) => updateBlockSettings(id, { leftTextColor: v })} />
-                    <ColorField label="Icon Color" value={s.leftIconColor || ""} onChange={(v) => updateBlockSettings(id, { leftIconColor: v })} />
-                    <ColorField label="Border Color" value={s.leftBorderColor || ""} onChange={(v) => updateBlockSettings(id, { leftBorderColor: v })} />
-                 </BlockStack>
-              </Card>
-              <Card padding="300">
-                 <BlockStack gap="200">
-                    <Text variant="bodySm" fontWeight="bold" as="p">Right Column</Text>
-                    <TextField label="Title" value={s.rightTitle || ""} onChange={(v) => updateBlockSettings(id, { rightTitle: v })} autoComplete="off" />
-                    <TextField label="Text" value={s.rightText || ""} onChange={(v) => updateBlockSettings(id, { rightText: v })} autoComplete="off" multiline={2} />
-                    <Button onClick={() => setIconPickerTarget({ blockId: id, field: "rightIcon", open: true })}>Icon: {s.rightIcon || 'store'}</Button>
-                    <ColorField label="Card Background" value={s.rightBgColor || ""} onChange={(v) => updateBlockSettings(id, { rightBgColor: v })} />
-                    <ColorField label="Title Color" value={s.rightTitleColor || ""} onChange={(v) => updateBlockSettings(id, { rightTitleColor: v })} />
-                    <ColorField label="Text Color" value={s.rightTextColor || ""} onChange={(v) => updateBlockSettings(id, { rightTextColor: v })} />
-                    <ColorField label="Icon Color" value={s.rightIconColor || ""} onChange={(v) => updateBlockSettings(id, { rightIconColor: v })} />
-                    <ColorField label="Border Color" value={s.rightBorderColor || ""} onChange={(v) => updateBlockSettings(id, { rightBorderColor: v })} />
-                 </BlockStack>
-              </Card>
-              <RangeSlider label="Card Radius" min={0} max={32} value={Number(s.cardRadius ?? 16)} onChange={(v) => updateBlockSettings(id, { cardRadius: Number(v) })} output />
-              <RangeSlider label="Card Padding" min={8} max={36} value={Number(s.cardPadding ?? 20)} onChange={(v) => updateBlockSettings(id, { cardPadding: Number(v) })} output />
-              <RangeSlider label="Icon Size" min={12} max={48} value={Number(s.iconSize ?? 28)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
-              <RangeSlider label="Title Size" min={10} max={24} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
-              <RangeSlider label="Text Size" min={9} max={20} value={Number(s.textFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { textFontSize: Number(v) })} output />
-              <RangeSlider label="Column Gap" min={4} max={32} value={Number(s.columnGap ?? 16)} onChange={(v) => updateBlockSettings(id, { columnGap: Number(v) })} output />
-              <RangeSlider label="Card Gap" min={0} max={24} value={Number(s.cardGap ?? 8)} onChange={(v) => updateBlockSettings(id, { cardGap: Number(v) })} output />
-              <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              <InspectorSection title="Left column" defaultOpen>
+                <TextField label="Title" value={s.leftTitle || ""} onChange={(v) => updateBlockSettings(id, { leftTitle: v })} autoComplete="off" />
+                <TextField label="Text" value={s.leftText || ""} onChange={(v) => updateBlockSettings(id, { leftText: v })} autoComplete="off" multiline={2} />
+                <Button onClick={() => setIconPickerTarget({ blockId: id, field: "leftIcon", open: true })}>Icon: {iconLabel(s.leftIcon || 'monitor')}</Button>
+                <InspectorSection title="Left colors">
+                  <ColorField label="Card Background" value={s.leftBgColor || ""} onChange={(v) => updateBlockSettings(id, { leftBgColor: v })} />
+                  <ColorField label="Title Color" value={s.leftTitleColor || ""} onChange={(v) => updateBlockSettings(id, { leftTitleColor: v })} />
+                  <ColorField label="Text Color" value={s.leftTextColor || ""} onChange={(v) => updateBlockSettings(id, { leftTextColor: v })} />
+                  <ColorField label="Icon Color" value={s.leftIconColor || ""} onChange={(v) => updateBlockSettings(id, { leftIconColor: v })} />
+                  <ColorField label="Border Color" value={s.leftBorderColor || ""} onChange={(v) => updateBlockSettings(id, { leftBorderColor: v })} />
+                </InspectorSection>
+              </InspectorSection>
+              <InspectorSection title="Right column" defaultOpen>
+                <TextField label="Title" value={s.rightTitle || ""} onChange={(v) => updateBlockSettings(id, { rightTitle: v })} autoComplete="off" />
+                <TextField label="Text" value={s.rightText || ""} onChange={(v) => updateBlockSettings(id, { rightText: v })} autoComplete="off" multiline={2} />
+                <Button onClick={() => setIconPickerTarget({ blockId: id, field: "rightIcon", open: true })}>Icon: {iconLabel(s.rightIcon || 'store')}</Button>
+                <InspectorSection title="Right colors">
+                  <ColorField label="Card Background" value={s.rightBgColor || ""} onChange={(v) => updateBlockSettings(id, { rightBgColor: v })} />
+                  <ColorField label="Title Color" value={s.rightTitleColor || ""} onChange={(v) => updateBlockSettings(id, { rightTitleColor: v })} />
+                  <ColorField label="Text Color" value={s.rightTextColor || ""} onChange={(v) => updateBlockSettings(id, { rightTextColor: v })} />
+                  <ColorField label="Icon Color" value={s.rightIconColor || ""} onChange={(v) => updateBlockSettings(id, { rightIconColor: v })} />
+                  <ColorField label="Border Color" value={s.rightBorderColor || ""} onChange={(v) => updateBlockSettings(id, { rightBorderColor: v })} />
+                </InspectorSection>
+              </InspectorSection>
+              <InspectorSection title="Sizing & spacing">
+                <RangeSlider label="Card Radius" min={0} max={32} value={Number(s.cardRadius ?? 16)} onChange={(v) => updateBlockSettings(id, { cardRadius: Number(v) })} output />
+                <RangeSlider label="Card Padding" min={8} max={36} value={Number(s.cardPadding ?? 20)} onChange={(v) => updateBlockSettings(id, { cardPadding: Number(v) })} output />
+                <RangeSlider label="Icon Size" min={12} max={48} value={Number(s.iconSize ?? 28)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+                <RangeSlider label="Title Size" min={10} max={24} value={Number(s.titleFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { titleFontSize: Number(v) })} output />
+                <RangeSlider label="Text Size" min={9} max={20} value={Number(s.textFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { textFontSize: Number(v) })} output />
+                <RangeSlider label="Column Gap" min={4} max={32} value={Number(s.columnGap ?? 16)} onChange={(v) => updateBlockSettings(id, { columnGap: Number(v) })} output />
+                <RangeSlider label="Card Gap" min={0} max={24} value={Number(s.cardGap ?? 8)} onChange={(v) => updateBlockSettings(id, { cardGap: Number(v) })} output />
+                <RangeSlider label="Border Width" min={0} max={8} value={Number(s.borderWidth ?? 1)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+              </InspectorSection>
            </BlockStack>
         )}
 
         {type === 'progress' && (
            <BlockStack gap="300">
-              <TextField label="Label" value={s.label || ""} onChange={(v) => updateBlockSettings(id, { label: v })} autoComplete="off" />
-              <RangeSlider label="Progress Percentage" min={0} max={100} value={s.percentage || 75} onChange={(v) => updateBlockSettings(id, { percentage: v })} output />
-              <ColorField label="Label Color" value={s.labelColor || ""} onChange={(v) => updateBlockSettings(id, { labelColor: v })} />
-              <ColorField label="Track Color" value={s.trackColor || ""} onChange={(v) => updateBlockSettings(id, { trackColor: v })} />
-              <ColorField label="Fill Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
-              <ColorField label="Track Border" value={s.trackBorderColor || ""} onChange={(v) => updateBlockSettings(id, { trackBorderColor: v })} />
-              <Select label="Fill Style" options={[{label:'Solid',value:'solid'},{label:'Gradient',value:'gradient'}]} value={s.fillStyle || 'solid'} onChange={(v) => updateBlockSettings(id, { fillStyle: v })} />
-              <ColorField label="Fill Gradient End" value={s.gradientEndColor || ""} onChange={(v) => updateBlockSettings(id, { gradientEndColor: v })} />
-              <RangeSlider label="Label Size" min={10} max={24} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
-              <RangeSlider label="Track Height" min={4} max={24} value={Number(s.height ?? 10)} onChange={(v) => updateBlockSettings(id, { height: Number(v) })} output />
-              <RangeSlider label="Track Radius" min={0} max={24} value={Number(s.radius ?? 20)} onChange={(v) => updateBlockSettings(id, { radius: Number(v) })} output />
-              <RangeSlider label="Track Border Width" min={0} max={8} value={Number(s.trackBorderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { trackBorderWidth: Number(v) })} output />
+              <InspectorSection title="Content" defaultOpen>
+                <TextField label="Label" value={s.label || ""} onChange={(v) => updateBlockSettings(id, { label: v })} autoComplete="off" />
+                <RangeSlider label="Progress Percentage" min={0} max={100} value={s.percentage || 75} onChange={(v) => updateBlockSettings(id, { percentage: v })} output />
+                <Select label="Fill Style" options={[{label:'Solid',value:'solid'},{label:'Gradient',value:'gradient'}]} value={s.fillStyle || 'solid'} onChange={(v) => updateBlockSettings(id, { fillStyle: v })} />
+              </InspectorSection>
+              <InspectorSection title="Colors">
+                <ColorField label="Label Color" value={s.labelColor || ""} onChange={(v) => updateBlockSettings(id, { labelColor: v })} />
+                <ColorField label="Track Color" value={s.trackColor || ""} onChange={(v) => updateBlockSettings(id, { trackColor: v })} />
+                <ColorField label="Fill Color" value={s.color || iconColor} onChange={(v) => updateBlockSettings(id, { color: v })} />
+                <ColorField label="Track Border" value={s.trackBorderColor || ""} onChange={(v) => updateBlockSettings(id, { trackBorderColor: v })} />
+                <ColorField label="Fill Gradient End" value={s.gradientEndColor || ""} onChange={(v) => updateBlockSettings(id, { gradientEndColor: v })} />
+              </InspectorSection>
+              <InspectorSection title="Sizing & spacing">
+                <RangeSlider label="Label Size" min={10} max={24} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
+                <RangeSlider label="Track Height" min={4} max={24} value={Number(s.height ?? 10)} onChange={(v) => updateBlockSettings(id, { height: Number(v) })} output />
+                <RangeSlider label="Track Radius" min={0} max={24} value={Number(s.radius ?? 20)} onChange={(v) => updateBlockSettings(id, { radius: Number(v) })} output />
+                <RangeSlider label="Track Border Width" min={0} max={8} value={Number(s.trackBorderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { trackBorderWidth: Number(v) })} output />
+              </InspectorSection>
            </BlockStack>
         )}
 
         {type === 'trust_badges' && (
           <BlockStack gap="300">
-            {normalizeTrustBadges(s).map((badge, index, badges) => (
-              <Card key={badge.id} padding="300">
-                <BlockStack gap="200">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="bodySm" fontWeight="bold" as="p">Badge {index + 1}</Text>
-                    <InlineStack gap="100">
-                      <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => moveTrustBadge(id, index, "up")} />
-                      <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === badges.length - 1} onClick={() => moveTrustBadge(id, index, "down")} />
-                      <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={badges.length <= 1} onClick={() => removeTrustBadge(id, badge.id)} />
+            <InspectorSection
+              title="Badges"
+              defaultOpen
+              badge={<Badge tone="info">{`${normalizeTrustBadges(s).length} badges`}</Badge>}
+            >
+              {normalizeTrustBadges(s).map((badge, index, badges) => (
+                <Card key={badge.id} padding="300">
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="bodySm" fontWeight="bold" as="p">Badge {index + 1}</Text>
+                      <InlineStack gap="100">
+                        <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={index === 0} onClick={() => moveTrustBadge(id, index, "up")} />
+                        <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={index === badges.length - 1} onClick={() => moveTrustBadge(id, index, "down")} />
+                        <Button icon={DeleteIcon} variant="tertiary" tone="critical" size="micro" disabled={badges.length <= 1} onClick={() => removeTrustBadge(id, badge.id)} />
+                      </InlineStack>
                     </InlineStack>
-                  </InlineStack>
-                  <TextField label="Label" value={badge.label} onChange={(v) => updateTrustBadge(id, badge.id, { label: v })} autoComplete="off" />
-                  <TextField label="Sub-text" value={badge.subText} onChange={(v) => updateTrustBadge(id, badge.id, { subText: v })} autoComplete="off" />
-                  <Button onClick={() => setIconPickerTarget({ blockId: id, field: `trustBadge:${badge.id}`, open: true })}>
-                    {badge.icon ? `Icon: ${badge.icon}` : "Pick Icon"}
-                  </Button>
-                  <ColorField label="Badge Background" value={badge.bgColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { bgColor: v })} />
-                  <ColorField label="Badge Border" value={badge.borderColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { borderColor: v })} />
-                  <ColorField label="Icon Color" value={badge.iconColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { iconColor: v })} />
-                  <ColorField label="Label Color" value={badge.labelColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { labelColor: v })} />
-                  <ColorField label="Sub-text Color" value={badge.subTextColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { subTextColor: v })} />
-                </BlockStack>
-              </Card>
-            ))}
-            <Button icon={PlusIcon} onClick={() => addTrustBadge(id)} disabled={normalizeTrustBadges(s).length >= 8}>
-              Add trust badge
-            </Button>
-            <RangeSlider label="Badge Icon Size" min={12} max={40} value={Number(s.iconSize ?? 24)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
-            <RangeSlider label="Badge Padding" min={4} max={24} value={Number(s.itemPadding ?? 8)} onChange={(v) => updateBlockSettings(id, { itemPadding: Number(v) })} output />
-            <RangeSlider label="Badge Radius" min={0} max={80} value={Number(s.itemRadius ?? 32)} onChange={(v) => updateBlockSettings(id, { itemRadius: Number(v) })} output />
-            <RangeSlider label="Badge Gap" min={0} max={20} value={Number(s.itemGap ?? 8)} onChange={(v) => updateBlockSettings(id, { itemGap: Number(v) })} output />
-            <RangeSlider label="Label Size" min={10} max={22} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
-            <RangeSlider label="Sub-text Size" min={9} max={18} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
-            <RangeSlider label="Row Gap" min={0} max={28} value={Number(s.rowGap ?? 12)} onChange={(v) => updateBlockSettings(id, { rowGap: Number(v) })} output />
+                    <TextField label="Label" value={badge.label} onChange={(v) => updateTrustBadge(id, badge.id, { label: v })} autoComplete="off" />
+                    <TextField label="Sub-text" value={badge.subText} onChange={(v) => updateTrustBadge(id, badge.id, { subText: v })} autoComplete="off" />
+                    <Button onClick={() => setIconPickerTarget({ blockId: id, field: `trustBadge:${badge.id}`, open: true })}>
+                      {badge.icon ? `Icon: ${iconLabel(badge.icon)}` : "Pick Icon"}
+                    </Button>
+                    <InspectorSection title="Badge colors">
+                      <ColorField label="Badge Background" value={badge.bgColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { bgColor: v })} />
+                      <ColorField label="Badge Border" value={badge.borderColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { borderColor: v })} />
+                      <ColorField label="Icon Color" value={badge.iconColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { iconColor: v })} />
+                      <ColorField label="Label Color" value={badge.labelColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { labelColor: v })} />
+                      <ColorField label="Sub-text Color" value={badge.subTextColor || ""} onChange={(v) => updateTrustBadge(id, badge.id, { subTextColor: v })} />
+                    </InspectorSection>
+                  </BlockStack>
+                </Card>
+              ))}
+              <Button icon={PlusIcon} onClick={() => addTrustBadge(id)} disabled={normalizeTrustBadges(s).length >= 8}>
+                Add trust badge
+              </Button>
+            </InspectorSection>
+            <InspectorSection title="Sizing & spacing">
+              <RangeSlider label="Badge Icon Size" min={12} max={40} value={Number(s.iconSize ?? 24)} onChange={(v) => updateBlockSettings(id, { iconSize: Number(v) })} output />
+              <RangeSlider label="Badge Padding" min={4} max={24} value={Number(s.itemPadding ?? 8)} onChange={(v) => updateBlockSettings(id, { itemPadding: Number(v) })} output />
+              <RangeSlider label="Badge Radius" min={0} max={80} value={Number(s.itemRadius ?? 32)} onChange={(v) => updateBlockSettings(id, { itemRadius: Number(v) })} output />
+              <RangeSlider label="Badge Gap" min={0} max={20} value={Number(s.itemGap ?? 8)} onChange={(v) => updateBlockSettings(id, { itemGap: Number(v) })} output />
+              <RangeSlider label="Label Size" min={10} max={22} value={Number(s.labelFontSize ?? 14)} onChange={(v) => updateBlockSettings(id, { labelFontSize: Number(v) })} output />
+              <RangeSlider label="Sub-text Size" min={9} max={18} value={Number(s.subTextFontSize ?? 12)} onChange={(v) => updateBlockSettings(id, { subTextFontSize: Number(v) })} output />
+              <RangeSlider label="Row Gap" min={0} max={28} value={Number(s.rowGap ?? 12)} onChange={(v) => updateBlockSettings(id, { rowGap: Number(v) })} output />
+            </InspectorSection>
           </BlockStack>
         )}
 
@@ -1119,15 +1424,21 @@ export default function VisualBuilderStudio() {
 
         {type === 'image' && (
            <BlockStack gap="300">
-              <TextField label="Image URL" value={s.url || ""} onChange={(v) => updateBlockSettings(id, { url: v })} autoComplete="off" />
-              <Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'},{label:'Right',value:'right'}]} value={s.align || 'center'} onChange={(v) => updateBlockSettings(id, { align: v })} />
-              <TextField label="Height (px/auto)" value={s.height || 'auto'} onChange={(v) => updateBlockSettings(id, { height: v })} autoComplete="off" />
-              <TextField label="Width (px/%/auto)" value={s.width || 'auto'} onChange={(v) => updateBlockSettings(id, { width: v })} autoComplete="off" />
-              <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
-              <RangeSlider label="Border Width" min={0} max={10} value={Number(s.borderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
-              <RangeSlider label="Image Radius" min={0} max={48} value={Number(s.borderRadius ?? 0)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
-              <Select label="Object Fit" options={[{label:'Contain',value:'contain'},{label:'Cover',value:'cover'},{label:'Fill',value:'fill'}]} value={s.objectFit || 'contain'} onChange={(v) => updateBlockSettings(id, { objectFit: v })} />
-              <RangeSlider label="Opacity" min={20} max={100} value={Number(s.opacity ?? 100)} onChange={(v) => updateBlockSettings(id, { opacity: Number(v) })} output />
+              <InspectorSection title="Source" defaultOpen>
+                <TextField label="Image URL" value={s.url || ""} onChange={(v) => updateBlockSettings(id, { url: v })} autoComplete="off" />
+              </InspectorSection>
+              <InspectorSection title="Layout">
+                <Select label="Alignment" options={[{label:'Left',value:'left'},{label:'Center',value:'center'},{label:'Right',value:'right'}]} value={s.align || 'center'} onChange={(v) => updateBlockSettings(id, { align: v })} />
+                <TextField label="Height (px/auto)" value={s.height || 'auto'} onChange={(v) => updateBlockSettings(id, { height: v })} autoComplete="off" />
+                <TextField label="Width (px/%/auto)" value={s.width || 'auto'} onChange={(v) => updateBlockSettings(id, { width: v })} autoComplete="off" />
+                <Select label="Object Fit" options={[{label:'Contain',value:'contain'},{label:'Cover',value:'cover'},{label:'Fill',value:'fill'}]} value={s.objectFit || 'contain'} onChange={(v) => updateBlockSettings(id, { objectFit: v })} />
+              </InspectorSection>
+              <InspectorSection title="Style">
+                <ColorField label="Border Color" value={s.borderColor || ""} onChange={(v) => updateBlockSettings(id, { borderColor: v })} />
+                <RangeSlider label="Border Width" min={0} max={10} value={Number(s.borderWidth ?? 0)} onChange={(v) => updateBlockSettings(id, { borderWidth: Number(v) })} output />
+                <RangeSlider label="Image Radius" min={0} max={48} value={Number(s.borderRadius ?? 0)} onChange={(v) => updateBlockSettings(id, { borderRadius: Number(v) })} output />
+                <RangeSlider label="Opacity" min={20} max={100} value={Number(s.opacity ?? 100)} onChange={(v) => updateBlockSettings(id, { opacity: Number(v) })} output />
+              </InspectorSection>
            </BlockStack>
         )}
 
@@ -1159,19 +1470,7 @@ export default function VisualBuilderStudio() {
     }
 
     const { id, type, settings: s } = activeBlock;
-    const enabled = s.iconAnimation === "lordicon";
-    const enableLordicon = () => {
-      updateBlockSettings(id, {
-        iconAnimation: "lordicon",
-        lordiconPreset: s.lordiconPreset || "auto",
-        lordiconTrigger: s.lordiconTrigger || "loop",
-        lordiconStroke: s.lordiconStroke || "regular",
-        lordiconSpeed: Number(s.lordiconSpeed ?? 1),
-        lordiconSize: Number(s.lordiconSize ?? s.iconSize ?? 32),
-        lordiconPrimaryColor: s.lordiconPrimaryColor || iconColor,
-        lordiconSecondaryColor: s.lordiconSecondaryColor || textColor,
-      });
-    };
+    const animatedIconCount = getAnimatedIconsInSettings(s).length;
 
     return (
       <BlockStack gap="400">
@@ -1180,102 +1479,12 @@ export default function VisualBuilderStudio() {
             <Text variant="bodySm" tone="subdued" as="p">SELECTED LAYER</Text>
             <Text variant="headingMd" as="h3">{getBlockLabel(type)}</Text>
           </BlockStack>
-          <Button
-            variant="secondary"
-            pressed={enabled}
-            onClick={() => enabled ? updateBlockSettings(id, { iconAnimation: "none" }) : enableLordicon()}
-          >
-            {enabled ? "Lordicon On" : "Enable Lordicon"}
-          </Button>
+          {animatedIconCount > 0 && <Badge tone="success">{`${animatedIconCount} animated`}</Badge>}
         </InlineStack>
 
         <Divider />
 
-        {enabled ? (
-          <BlockStack gap="300">
-            <Select
-              label="Lordicon Source"
-              options={lordiconPresetOptions}
-              value={s.lordiconPreset || "auto"}
-              onChange={(v) => updateBlockSettings(id, { lordiconPreset: v })}
-            />
-            {s.lordiconPreset === "custom" && (
-              <TextField
-                label="Lordicon JSON URL"
-                value={s.lordiconUrl || ""}
-                onChange={(v) => updateBlockSettings(id, { lordiconUrl: v })}
-                autoComplete="off"
-                placeholder="/icons/animated/delivery-truck.json"
-                helpText="Allowed: local /icons/animated/*.json or https://cdn.lordicon.com/*.json"
-              />
-            )}
-
-            <InlineStack gap="200">
-              <div style={{ flex: 1 }}>
-                <Select
-                  label="Trigger"
-                  options={lordiconTriggerOptions}
-                  value={s.lordiconTrigger === "loop-on-hover" ? "loop" : s.lordiconTrigger || "loop"}
-                  onChange={(v) => updateBlockSettings(id, { lordiconTrigger: v })}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <Select
-                  label="Stroke"
-                  options={lordiconStrokeOptions}
-                  value={s.lordiconStroke || "regular"}
-                  onChange={(v) => updateBlockSettings(id, { lordiconStroke: v })}
-                />
-              </div>
-            </InlineStack>
-
-            <TextField
-              label="Animation State"
-              value={s.lordiconState || ""}
-              onChange={(v) => updateBlockSettings(id, { lordiconState: v })}
-              autoComplete="off"
-              placeholder="Optional, e.g. hover-pinch"
-            />
-
-            <RangeSlider
-              label="Animation Size"
-              min={12}
-              max={96}
-              value={Number(s.lordiconSize ?? s.iconSize ?? 32)}
-              onChange={(v) => updateBlockSettings(id, { lordiconSize: Number(v) })}
-              output
-            />
-            <RangeSlider
-              label="Playback Speed"
-              min={0.25}
-              max={3}
-              step={0.25}
-              value={Number(s.lordiconSpeed ?? 1)}
-              onChange={(v) => updateBlockSettings(id, { lordiconSpeed: Number(v) })}
-              output
-            />
-
-            <ColorField label="Primary Color" value={s.lordiconPrimaryColor || iconColor} onChange={(v) => updateBlockSettings(id, { lordiconPrimaryColor: v })} />
-            <ColorField label="Secondary Color" value={s.lordiconSecondaryColor || textColor} onChange={(v) => updateBlockSettings(id, { lordiconSecondaryColor: v })} />
-
-            <InlineStack align="space-between" blockAlign="center">
-              <Text variant="bodyMd" as="p">Keep static icon visible</Text>
-              <Button
-                variant="secondary"
-                pressed={s.lordiconKeepStatic === true}
-                onClick={() => updateBlockSettings(id, { lordiconKeepStatic: s.lordiconKeepStatic !== true })}
-              >
-                {s.lordiconKeepStatic === true ? "Enabled" : "Disabled"}
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        ) : (
-          <Box padding="400" background="bg-fill-secondary" borderRadius="200">
-            <Text variant="bodySm" tone="subdued" alignment="center" as="p">
-              Lordicon is off for this component.
-            </Text>
-          </Box>
-        )}
+        {renderAnimatedIconControls(id, s, { showEmpty: true, title: "Animation Settings" })}
       </BlockStack>
     );
   };
@@ -1427,7 +1636,8 @@ export default function VisualBuilderStudio() {
           <div style={{
             width: previewMode === 'mobile' ? 375 : '100%',
             maxWidth: previewMode === 'desktop' ? 1000 : 375,
-            height: previewMode === 'mobile' ? 667 : 'fit-content',
+            height: previewMode === 'mobile' ? 667 : 'auto',
+            maxHeight: previewMode === 'desktop' ? 'calc(100vh - 170px)' : 667,
             background: 'white',
             borderRadius: previewMode === 'mobile' ? '32px' : '12px',
             border: '1px solid #e1e3e5',
@@ -1457,7 +1667,7 @@ export default function VisualBuilderStudio() {
         </div>
 
         {/* ─── RIGHT SIDEBAR (Inspector) ─────────────────────────────────────── */}
-        <div style={{ width: 320, background: 'white', borderLeft: '1px solid #e1e3e5', padding: '16px', overflowY: 'auto' }}>
+        <div style={{ width: 360, background: 'white', borderLeft: '1px solid #e1e3e5', padding: '16px', overflowY: 'auto' }}>
            {renderBlockEditor()}
         </div>
       </div>
@@ -1465,6 +1675,7 @@ export default function VisualBuilderStudio() {
       <IconLibraryModal 
         isOpen={iconPickerTarget.open}
         onClose={() => setIconPickerTarget({ open: false })}
+        currentIcon={getIconPickerCurrentIcon()}
         onSelect={(selection: IconLibrarySelection) => {
            if (iconPickerTarget.blockId) {
              const field = iconPickerTarget.field || 'icon';
@@ -1481,11 +1692,10 @@ export default function VisualBuilderStudio() {
 
              updateBlockSettings(iconPickerTarget.blockId, selection.animated
                ? {
-                   iconAnimation: "lordicon",
-                   lordiconPreset: "auto",
+                   iconAnimation: "none",
+                   lordiconPreset: "",
                    lordiconUrl: "",
                    lordiconState: "",
-                   lordiconKeepStatic: false,
                    lordiconTrigger: "loop",
                    lordiconStroke: blockSettings.lordiconStroke || "regular",
                    lordiconSpeed: Number(blockSettings.lordiconSpeed ?? 1),

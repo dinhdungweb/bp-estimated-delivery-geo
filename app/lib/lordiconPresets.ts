@@ -8,6 +8,15 @@ export interface LordiconLibraryIcon {
   loopState?: string;
 }
 
+export const ANIMATED_ICON_PREFIX = "animated:";
+
+export const makeAnimatedIconId = (fileKey: string) => `${ANIMATED_ICON_PREFIX}${fileKey}`;
+
+export const getAnimatedIconFileKey = (iconId?: string) => {
+  const match = new RegExp(`^${ANIMATED_ICON_PREFIX}([a-z0-9-]+)$`, "i").exec(String(iconId || ""));
+  return match?.[1] || "";
+};
+
 const animatedIconPath = (fileName: string) => `/icons/animated/${fileName}.json`;
 
 const animatedIcon = (
@@ -42,6 +51,11 @@ export const ANIMATED_ICONS: LordiconLibraryIcon[] = [
   animatedIcon("monitor", "online-order", "Online Order", "hover-popup", "in-reveal"),
   animatedIcon("tag", "promo-tag", "Promo Tag", "hover-pinch", "in-reveal"),
 ];
+
+export const getAnimatedIconByIconId = (iconId?: string) => {
+  const fileKey = getAnimatedIconFileKey(iconId);
+  return fileKey ? ANIMATED_ICONS.find((icon) => icon.fileKey === fileKey) : undefined;
+};
 
 const srcById = ANIMATED_ICONS.reduce<Record<string, string>>((acc, icon) => {
   acc[icon.id] = icon.src;
