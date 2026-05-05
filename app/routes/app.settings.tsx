@@ -19,7 +19,6 @@ import {
 } from "@shopify/polaris";
 import { 
   PlusIcon, 
-  LayoutColumns2Icon,
   ViewIcon,
   EditIcon,
   WandIcon,
@@ -92,6 +91,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop = session.shop;
   const templateApplied = url.searchParams.get("templateApplied") === "1";
   const sourceDesignId = url.searchParams.get("sourceDesignId") || "";
+  const designName = url.searchParams.get("designName") || "";
 
   const [widgets, appSetting] = await Promise.all([
     prisma.widget.findMany({
@@ -115,10 +115,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           ) as unknown as Prisma.InputJsonValue,
         },
       });
-      return routerData({ defaultWidget, appSetting, shop, templateApplied, sourceDesignId });
+      return routerData({ defaultWidget, appSetting, shop, templateApplied, sourceDesignId, designName });
   }
 
-  return routerData({ defaultWidget: widgets[0], appSetting, shop, templateApplied, sourceDesignId });
+  return routerData({ defaultWidget: widgets[0], appSetting, shop, templateApplied, sourceDesignId, designName });
 };
 
 // ─── Action (Updates) ────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 // ─── Main Component (Premium UI) ─────────────────────────────────────────────
 export default function SettingsPage() {
-  const { defaultWidget, appSetting, shop, templateApplied, sourceDesignId } = useLoaderData<typeof loader>();
+  const { defaultWidget, appSetting, shop, templateApplied, sourceDesignId, designName } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -185,20 +185,6 @@ export default function SettingsPage() {
                <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
                <Text variant="bodySm" tone="subdued" as="p">System active on your storefront</Text>
             </div>
-         </div>
-         <div className="flex flex-wrap items-center gap-3">
-            <button 
-              onClick={() => navigate("/app/widgets")}
-              className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-900 shadow-sm transition-all hover:border-gray-900"
-            >
-              <div className="w-4 h-4 text-gray-500"><Icon source={LayoutColumns2Icon} /></div> All Widgets
-            </button>
-            <button 
-              onClick={() => navigate("/app/widgets/new")}
-              className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black active:scale-95"
-            >
-              <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div> Build New
-            </button>
          </div>
       </div>
 
@@ -306,6 +292,7 @@ export default function SettingsPage() {
                         const params = new URLSearchParams();
                         if (templateApplied) params.set("saveAsDesign", "1");
                         if (sourceDesignId) params.set("sourceDesignId", sourceDesignId);
+                        if (designName) params.set("designName", designName);
                         const query = params.toString();
                         navigate(`/app/widgets/${defaultWidget.id}${query ? `?${query}` : ""}`);
                       }}

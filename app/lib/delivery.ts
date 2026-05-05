@@ -1,4 +1,4 @@
-import type { Prisma, Widget } from "@prisma/client";
+import type { DeliveryRule, Prisma, Widget } from "@prisma/client";
 
 export type WidgetStyleId =
   | "eco_delivery"
@@ -502,4 +502,57 @@ export function selectWidget(
   if (matchAllWidget) return matchAllWidget;
 
   return widgets[0];
+}
+
+export function selectDeliveryRule<T extends DeliveryRule>(
+  rules: T[],
+  countryCode: string,
+  productTags: string[],
+  productId?: string,
+): T | undefined {
+  const normalizedCountry = normalizeCountry(countryCode);
+  const normalizedTags = normalizeTags(productTags);
+  const normalizedProductId = normalizeProductId(productId);
+
+  const countryRank = (rule: DeliveryRule) => {
+    const ruleCountry = normalizeCountry(rule.countryCode);
+    if (ruleCountry === normalizedCountry) return 0;
+    if (ruleCountry === "OTHER") return 1;
+    return 2;
+  };
+
+  const candidates = rules
+    .filter((rule) => rule.isActive)
+    .filter((rule) => countryRank(rule) < 2)
+    .sort((a, b) => countryRank(a) - countryRank(b));
+
+  if (normalizedProductId) {
+    const productMatch = candidates.find((rule) =>
+      normalizeProductIds(jsonStringArray(rule.targetProducts)).includes(normalizedProductId),
+    );
+    if (productMatch) return productMatch;
+  }
+
+  const tagMatch = candidates.find((rule) => {
+    const targets = normalizeTags(jsonStringArray(rule.targetTags));
+    return targets.length > 0 && targets.some((tag) => normalizedTags.includes(tag));
+  });
+  if (tagMatch) return tagMatch;
+
+  const genericCountryMatch = candidates.find((rule) => {
+    return (
+      countryRank(rule) === 0 &&
+      jsonStringArray(rule.targetProducts).length === 0 &&
+      jsonStringArray(rule.targetTags).length === 0
+    );
+  });
+  if (genericCountryMatch) return genericCountryMatch;
+
+  return candidates.find((rule) => {
+    return (
+      countryRank(rule) === 1 &&
+      jsonStringArray(rule.targetProducts).length === 0 &&
+      jsonStringArray(rule.targetTags).length === 0
+    );
+  });
 }

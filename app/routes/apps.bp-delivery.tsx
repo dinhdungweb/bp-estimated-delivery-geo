@@ -7,7 +7,7 @@ import {
   normalizeCountry,
   normalizeProductId,
   normalizeTags,
-  selectWidget,
+  selectDeliveryRule,
   widgetBlocks,
 } from "../lib/delivery";
 import type { APIDeliveryResponse } from "../lib/delivery";
@@ -72,25 +72,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const productId = normalizeProductId(url.searchParams.get("product_id"));
   const productTags = normalizeTags(url.searchParams.get("tags") || "");
 
-  let rule = await prisma.deliveryRule.findFirst({
-    where: { shop, countryCode, isActive: true },
-  });
-
-  if (!rule) {
-    rule = await prisma.deliveryRule.findFirst({
-      where: { shop, countryCode: "OTHER", isActive: true },
-    });
-  }
-
-  const [allWidgets, globalSettings] = await Promise.all([
-    prisma.widget.findMany({
-      where: { shop, isActive: true },
-      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+  const [rules, defaultWidget, globalSettings] = await Promise.all([
+    prisma.deliveryRule.findMany({
+      where: {
+        shop,
+        isActive: true,
+        countryCode: { in: [countryCode, "OTHER"] },
+      },
+      include: { widget: true },
+      orderBy: [{ createdAt: "desc" }],
+    }),
+    prisma.widget.findFirst({
+      where: { shop, isActive: true, isDefault: true },
     }),
     prisma.appSetting.findUnique({ where: { shop } }),
   ]);
 
-  const selectedWidget = selectWidget(allWidgets, countryCode, productTags, productId);
+  const rule = selectDeliveryRule(rules, countryCode, productTags, productId);
+  const selectedWidget = rule?.widget?.isActive ? rule.widget : defaultWidget;
 
   if (!globalSettings?.isEnabled || !selectedWidget || !rule) {
     return disabledResponse(countryCode, "disabled_or_missing_config");

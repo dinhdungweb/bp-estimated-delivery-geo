@@ -11,6 +11,7 @@ import {
   useLoaderData,
   useNavigate,
   useNavigation,
+  useSearchParams,
   useSubmit,
 } from "react-router";
 import { useMemo, useState } from "react";
@@ -134,6 +135,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "template");
   const templateId = String(formData.get("templateId") || "");
+  const templateName = String(formData.get("templateName") || "").trim();
   const widgetId = String(formData.get("widgetId") || "");
 
   if (intent === "create-design") {
@@ -216,7 +218,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
     }
 
-    return redirect(`/app/settings?sourceDesignId=${encodeURIComponent(sourceWidget.id)}`);
+    const params = new URLSearchParams({ sourceDesignId: sourceWidget.id });
+    if (sourceWidget.name) params.set("designName", sourceWidget.name);
+
+    return redirect(`/app/settings?${params.toString()}`);
   }
 
   if (!templateId || !TEMPLATE_DEFAULTS[templateId]) {
@@ -260,7 +265,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
-  return redirect("/app/settings?templateApplied=1");
+  const params = new URLSearchParams({ templateApplied: "1" });
+  if (templateName) params.set("designName", templateName);
+
+  return redirect(`/app/settings?${params.toString()}`);
 };
 
 const CATEGORIES: TemplateCategory[] = [
@@ -696,10 +704,14 @@ export default function TemplateBuilder() {
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
+  const [searchParams] = useSearchParams();
   const actionData = useActionData() as ActionResult | undefined;
-  const [activeMainTab, setActiveMainTab] = useState<TemplateMainTab>("General");
+  const [activeMainTab, setActiveMainTab] = useState<TemplateMainTab>(
+    searchParams.get("tab") === "my-design" ? "My design" : "General",
+  );
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>("Animated");
   const [pendingStyle, setPendingStyle] = useState<TemplateId | null>(null);
+  const designSaved = searchParams.get("designSaved") === "1";
 
   const visibleTemplates = useMemo(
     () => WIDGET_TEMPLATES.filter((template) => template.category === activeCategory),
@@ -753,6 +765,12 @@ export default function TemplateBuilder() {
         {actionData?.error && (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
             {actionData.error}
+          </div>
+        )}
+
+        {designSaved && activeMainTab === "My design" && (
+          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 shadow-sm">
+            Design saved to My design.
           </div>
         )}
 

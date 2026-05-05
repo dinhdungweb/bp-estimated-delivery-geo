@@ -1,5 +1,4 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import type { Prisma } from "@prisma/client";
 import { useActionData, useLoaderData, useLocation, useNavigate, useNavigation, useSubmit, data as routerData } from "react-router";
 import React, { useState, useCallback, useEffect } from "react";
 import { 
@@ -50,9 +49,10 @@ import {
   normalizeTags,
   normalizeTrustBadges,
   parseBlockConfigs,
-  parseJsonArrayField,
 } from "../lib/delivery";
 import type { BlockType, PolicyItemConfig, StepItemConfig, TrustBadgeConfig, WidgetStyleId } from "../lib/delivery";
+import { saveWidgetStudio } from "../lib/widgetStudio.server";
+import type { SaveWidgetStudioResult } from "../lib/widgetStudio.server";
 import {
   createTemplatePalette,
   hydrateBlockStyleSamples,
@@ -65,6 +65,12 @@ import type { TemplatePalette } from "../lib/widgetStyleSamples";
 import { getAnimatedIconByIconId } from "../lib/lordiconPresets";
 import Chrome from '@uiw/react-color-chrome';
 import { createPortal } from "react-dom";
+
+type ShopifyAdminGlobal = {
+  toast?: {
+    show?: (message: string, options?: { isError?: boolean }) => void;
+  };
+};
 
 // ─── Reusable Elite Pro Color Picker (Genuine Chrome Style) ──────────────────
 const normalizeColorInput = (value: string) => {
@@ -378,117 +384,18 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
 // ─── Action ──────────────────────────────────────────────────────────────────
 export const action = async ({ params, request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const url = new URL(request.url);
   const formData = await request.formData();
-  const id = params.id;
-  const saveAsDesign =
-    url.searchParams.get("saveAsDesign") === "1" || formData.get("saveAsDesign") === "true";
-  const sourceDesignId = String(
-    formData.get("sourceDesignId") || url.searchParams.get("sourceDesignId") || "",
-  ).trim();
-  const name = String(formData.get("name"));
-  const isActive = formData.get("isActive") === "true";
-  const widgetStyle = String(formData.get("widgetStyle"));
-  const customBlocksRaw = parseJsonArrayField(formData.get("customBlocks"));
-  const textColor = String(formData.get("textColor"));
-  const iconColor = String(formData.get("iconColor"));
-  const bgColor = String(formData.get("bgColor"));
-  const borderColor = String(formData.get("borderColor"));
-  const borderRadius = parseInt(String(formData.get("borderRadius")) || "10");
-  const shadow = String(formData.get("shadow"));
-  const glassmorphism = formData.get("glassmorphism") === "true";
-  const padding = parseInt(String(formData.get("padding")) || "16");
-  const bgGradient = String(formData.get("bgGradient"));
-  const showTimeline = formData.get("showTimeline") === "true";
-  const targetCountriesRaw = parseJsonArrayField(formData.get("targetCountries"));
-  const targetProductsRaw = parseJsonArrayField(formData.get("targetProducts"));
-  const targetTagsRaw = parseJsonArrayField(formData.get("targetTags"));
 
-  if (!customBlocksRaw || !targetCountriesRaw || !targetProductsRaw || !targetTagsRaw) {
-    return routerData({ error: "Invalid widget payload" }, { status: 400 });
-  }
-
-  const customBlocks = parseBlockConfigs(customBlocksRaw);
-  const targetCountries = normalizeCountries(targetCountriesRaw);
-  const targetProducts = normalizeProductIds(targetProductsRaw);
-  const targetTags = normalizeTags(targetTagsRaw);
-
-  const data = {
+  const result = await saveWidgetStudio({
+    db: prisma,
+    formData,
+    id: params.id,
+    requestUrl: request.url,
     shop: session.shop,
-    name,
-    isActive,
-    widgetStyle,
-    customBlocks: customBlocks as unknown as Prisma.InputJsonValue,
-    textColor,
-    iconColor,
-    bgColor,
-    borderColor,
-    borderRadius,
-    shadow,
-    glassmorphism,
-    padding,
-    bgGradient,
-    showTimeline,
-    targetCountries: targetCountries as Prisma.InputJsonValue,
-    targetProducts: targetProducts as Prisma.InputJsonValue,
-    targetTags: targetTags as Prisma.InputJsonValue,
-  };
-
-  if (id === "new") {
-    const newWidget = await prisma.widget.create({ data });
-    return routerData({ success: true, newId: newWidget.id });
-  }
-
-  if (saveAsDesign) {
-    await prisma.widget.updateMany({
-      where: { id, shop: session.shop },
-      data,
-    });
-
-    const savedDesign = await prisma.widget.create({
-      data: {
-        ...data,
-        name: name.trim() || "Custom Design",
-        isDefault: false,
-      },
-    });
-
-    return routerData({ success: true, newId: savedDesign.id, savedAsDesign: true });
-  }
-
-  if (sourceDesignId) {
-    const sourceDesign = await prisma.widget.findFirst({
-      where: { id: sourceDesignId, shop: session.shop, isDefault: false },
-      select: { id: true },
-    });
-
-    if (!sourceDesign) {
-      return routerData({ error: "Source design not found" }, { status: 404 });
-    }
-
-    await prisma.$transaction([
-      prisma.widget.updateMany({
-        where: { id, shop: session.shop },
-        data,
-      }),
-      prisma.widget.update({
-        where: { id: sourceDesign.id },
-        data: {
-          ...data,
-          isDefault: false,
-        },
-      }),
-    ]);
-
-    return routerData({ success: true, newId: sourceDesign.id, updatedSourceDesign: true });
-  }
-
-  await prisma.widget.updateMany({
-    where: { id, shop: session.shop },
-    data,
   });
 
-  return routerData({ success: true });
+  const { status, ...payload } = result;
+  return status ? routerData(payload, { status }) : routerData(payload);
 };
 
 export default function VisualBuilderStudio() {
@@ -497,17 +404,79 @@ export default function VisualBuilderStudio() {
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
-  const actionData = useActionData<any>();
+  const actionData = useActionData<SaveWidgetStudioResult>();
   const isSaving = navigation.state === "submitting";
   const editorSearchParams = new URLSearchParams(location.search);
   const shouldSaveAsDesign = editorSearchParams.get("saveAsDesign") === "1";
   const sourceDesignId = editorSearchParams.get("sourceDesignId") || "";
+  const designName = editorSearchParams.get("designName") || "";
+  const designSavedFromUrl = editorSearchParams.get("designSaved") === "1";
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = React.useRef<number | null>(null);
+
+  const showToast = useCallback((message: string, isError = false) => {
+    const shopify = (window as Window & { shopify?: ShopifyAdminGlobal }).shopify;
+    if (shopify?.toast?.show) {
+      shopify.toast.show(message, { isError });
+      setToastMessage(null);
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+      return;
+    }
+
+    setToastMessage(message);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 3500);
+  }, []);
 
   useEffect(() => {
-    if (actionData?.success && actionData?.newId) {
-      navigate(`/app/widgets/${actionData.newId}`, { replace: true });
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!designSavedFromUrl) return;
+
+    showToast("Design saved to My design.");
+    const params = new URLSearchParams(location.search);
+    params.delete("designSaved");
+    const query = params.toString();
+    navigate(`${location.pathname}${query ? `?${query}` : ""}`, { replace: true });
+  }, [designSavedFromUrl, location.pathname, location.search, navigate, showToast]);
+
+  useEffect(() => {
+    if (actionData?.error) {
+      showToast(actionData.error, true);
+      return;
     }
-  }, [actionData, navigate]);
+
+    if (actionData?.success && actionData.savedAsDesign) {
+      if (shouldSaveAsDesign && actionData.newId) {
+        const params = new URLSearchParams(location.search);
+        params.delete("saveAsDesign");
+        params.set("sourceDesignId", actionData.newId);
+        if (designName) params.set("designName", designName);
+        params.set("designSaved", "1");
+        navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+      }
+      return;
+    }
+
+    if (actionData?.success && actionData.updatedSourceDesign) {
+      showToast("Design updated in My design.");
+      return;
+    }
+
+    if (actionData?.success && actionData.newId) {
+      navigate(`/app/widgets/${actionData.newId}`, { replace: true });
+      return;
+    }
+
+    if (actionData?.success) {
+      showToast("Widget saved.");
+    }
+  }, [actionData, designName, location.pathname, location.search, navigate, shouldSaveAsDesign, showToast]);
 
   // --- States ---
   const [name, setName] = useState(widget.name);
@@ -535,15 +504,9 @@ export default function VisualBuilderStudio() {
       block.id.startsWith("block-") ? block : stripGeneratedStyleSamples(block, templatePalette),
     ),
   );
-  const [targetCountries, setTargetCountries] = useState<string[]>(
-    normalizeCountries(widget.targetCountries),
-  );
-  const [targetProducts, setTargetProducts] = useState<string[]>(
-    normalizeProductIds(widget.targetProducts),
-  );
-  const [targetTags, setTargetTags] = useState<string[]>(
-    normalizeTags(widget.targetTags),
-  );
+  const targetCountries = normalizeCountries(widget.targetCountries);
+  const targetProducts = normalizeProductIds(widget.targetProducts);
+  const targetTags = normalizeTags(widget.targetTags);
   const [iconPickerTarget, setIconPickerTarget] = useState<{ blockId?: string; field?: string; open: boolean }>({ open: false });
 
   const handleSave = useCallback(() => {
@@ -569,9 +532,10 @@ export default function VisualBuilderStudio() {
     formData.append("targetTags", JSON.stringify(targetTags));
     formData.append("saveAsDesign", String(shouldSaveAsDesign));
     formData.append("sourceDesignId", sourceDesignId);
+    formData.append("designName", designName);
     
     submit(formData, { method: "post" });
-  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, shouldSaveAsDesign, sourceDesignId, submit]);
+  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, shouldSaveAsDesign, sourceDesignId, designName, submit]);
 
   const addBlock = (type: string) => {
     const id = createEditorId("block");
@@ -1492,7 +1456,6 @@ export default function VisualBuilderStudio() {
   const tabs = [
     { id: 'layers', content: 'Layers', accessibilityLabel: 'Layers' },
     { id: 'style', content: 'Global Style', accessibilityLabel: 'Style' },
-    { id: 'rules', content: 'Display Rules', accessibilityLabel: 'Rules' },
     { id: 'animation', content: 'Animation', accessibilityLabel: 'Animation' },
   ];
 
@@ -1503,7 +1466,7 @@ export default function VisualBuilderStudio() {
       <Box padding="300" background="bg-surface" borderBlockEndWidth="025" borderColor="border">
         <InlineStack align="space-between" blockAlign="center">
           <InlineStack gap="300" blockAlign="center">
-            <Button icon={ChevronLeftIcon} variant="tertiary" onClick={() => navigate("/app/widgets")} />
+            <Button icon={ChevronLeftIcon} variant="tertiary" onClick={() => navigate("/app/templates?tab=my-design")} />
             <Box width="1px" minHeight="24px" background="bg-fill-tertiary" />
             <div style={{ width: 250 }}>
               <TextField 
@@ -1531,6 +1494,45 @@ export default function VisualBuilderStudio() {
           </InlineStack>
         </InlineStack>
       </Box>
+
+      {actionData?.error && (
+        <div
+          style={{
+            borderBottom: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+            fontSize: 13,
+            fontWeight: 650,
+            padding: "10px 16px",
+          }}
+        >
+          {actionData.error}
+        </div>
+      )}
+
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 10001,
+            maxWidth: 360,
+            borderRadius: 10,
+            background: "#202223",
+            color: "#fff",
+            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.18)",
+            fontSize: 13,
+            fontWeight: 650,
+            lineHeight: "18px",
+            padding: "12px 14px",
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         
@@ -1613,21 +1615,7 @@ export default function VisualBuilderStudio() {
               </BlockStack>
             )}
 
-            {activeTab === 2 && (
-              <BlockStack gap="400">
-                <Text variant="bodySm" fontWeight="bold" tone="subdued" as="p">WIDGET RULES</Text>
-                <Box padding="400" background="bg-fill-info-secondary" borderRadius="200">
-                  <Text as="p">These rules determine when this specific widget will be displayed.</Text>
-                </Box>
-                <BlockStack gap="300">
-                   <TextField label="Target Countries (ISO Codes)" value={targetCountries.join(", ")} onChange={(v) => setTargetCountries(v.split(",").map(s => s.trim().toUpperCase()))} autoComplete="off" placeholder="US, VN, CA" helpText="Empty = All countries" />
-                   <TextField label="Target Product IDs" value={targetProducts.join(", ")} onChange={(v) => setTargetProducts(v.split(",").map(s => s.trim()))} autoComplete="off" placeholder="1234567890, gid://shopify/Product/1234567890" helpText="Optional. Product-specific widgets take priority over country and tag rules." />
-                   <TextField label="Target Product Tags" value={targetTags.join(", ")} onChange={(v) => setTargetTags(v.split(",").map(s => s.trim()))} autoComplete="off" placeholder="VIP, New, Pre-order" helpText="Empty = All products" />
-                </BlockStack>
-              </BlockStack>
-            )}
-
-            {activeTab === 3 && renderAnimationPanel()}
+            {activeTab === 2 && renderAnimationPanel()}
           </div>
         </div>
 

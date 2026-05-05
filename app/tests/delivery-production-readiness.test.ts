@@ -1,4 +1,4 @@
-import type { Widget } from "@prisma/client";
+import type { DeliveryRule, Widget } from "@prisma/client";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
@@ -12,6 +12,7 @@ import {
   normalizeTags,
   normalizeTrustBadges,
   parseBlockConfigs,
+  selectDeliveryRule,
   selectWidget,
 } from "../lib/delivery";
 
@@ -49,6 +50,25 @@ function widget(overrides: Partial<Widget>): Widget {
     step3Label: null,
     step3SubText: null,
     step3Icon: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function rule(overrides: Partial<DeliveryRule>): DeliveryRule {
+  return {
+    id: "rule",
+    shop: "shop.myshopify.com",
+    countryCode: "OTHER",
+    widgetId: null,
+    targetProducts: null,
+    targetTags: null,
+    minDays: 3,
+    maxDays: 7,
+    processingDays: 1,
+    shippingMessage: DEFAULT_SHIPPING_MESSAGE,
+    isActive: true,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -146,6 +166,22 @@ describe("delivery production helpers", () => {
     );
     expect(selectWidget([defaultWidget, matchAllWidget], "CA", [])?.id).toBe("default");
     expect(selectWidget([matchAllWidget], "CA", [])?.id).toBe("match-all");
+  });
+
+  it("selects delivery rules by product, then tag, then country, then rest of world", () => {
+    const restOfWorldRule = rule({ id: "rest", countryCode: "OTHER" });
+    const countryRule = rule({ id: "country", countryCode: "US" });
+    const tagRule = rule({ id: "tag", countryCode: "US", targetTags: ["vip"] });
+    const productRule = rule({ id: "product", countryCode: "US", targetProducts: ["123"] });
+
+    expect(
+      selectDeliveryRule([restOfWorldRule, countryRule, tagRule, productRule], "US", ["vip"], "123")?.id,
+    ).toBe("product");
+    expect(selectDeliveryRule([restOfWorldRule, countryRule, tagRule], "US", ["VIP"])?.id).toBe(
+      "tag",
+    );
+    expect(selectDeliveryRule([restOfWorldRule, countryRule], "US", [])?.id).toBe("country");
+    expect(selectDeliveryRule([restOfWorldRule], "CA", [])?.id).toBe("rest");
   });
 });
 

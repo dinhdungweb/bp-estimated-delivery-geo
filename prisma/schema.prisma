@@ -43,6 +43,9 @@ model DeliveryRule {
   id              String   @id @default(uuid())
   shop            String
   countryCode     String
+  widgetId        String?
+  targetProducts  Json?
+  targetTags      Json?
   minDays         Int      @default(3)
   maxDays         Int      @default(7)
   processingDays  Int      @default(1)
@@ -50,8 +53,10 @@ model DeliveryRule {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  widget          Widget?  @relation(fields: [widgetId], references: [id], onDelete: SetNull)
 
   @@index([shop, countryCode])
+  @@index([shop, widgetId])
 }
 
 model AppSetting {
@@ -132,6 +137,7 @@ model Widget {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  deliveryRules   DeliveryRule[]
 
   @@index([shop])
 }
