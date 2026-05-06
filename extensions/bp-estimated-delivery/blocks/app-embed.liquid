@@ -42,6 +42,7 @@
      data-product-price-cents="{{ product.selected_or_first_available_variant.price }}"
      data-currency-code="{{ cart.currency.iso_code | default: shop.currency }}"
      data-product-tags="{{ product.tags | join: ',' }}"
+     data-product-collections="{{ product.collections | map: 'id' | join: ',' }}"
      style="display:none; margin: 12px 0;">
   <div class="bp-skeleton" id="bp-delivery-embed-skeleton">
     <div class="bp-skeleton-line" style="width:70%"></div>
@@ -64,7 +65,7 @@
       <option value="FR">🇫🇷 France (EUR)</option>
       <option value="DE">🇩🇪 Germany (EUR)</option>
       <option value="SG">🇸🇬 Singapore (SGD)</option>
-      <option value="OTHER">🌍 Other Location</option>
+      <option value="ALL">🌍 All countries</option>
     </select>
     <button class="bp-modal-btn" id="{{ widget_id }}-modal-save">Save &amp; Continue</button>
   </div>

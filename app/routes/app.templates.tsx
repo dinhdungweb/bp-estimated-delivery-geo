@@ -24,65 +24,50 @@ import {
   DEFAULT_SHIPPING_MESSAGE,
   type BlockConfig,
   type WidgetSettingsProps,
-  type WidgetStyleId,
 } from "../lib/delivery";
-
-type TemplateId = Exclude<WidgetStyleId, "custom">;
-type TemplateMainTab = "General" | "My design";
-type TemplateCategory =
-  | "Animated"
-  | "Industry"
-  | "Order process"
-  | "Dark"
-  | "Light"
-  | "Informative"
-  | "Seasonal";
-
-type TemplateMeta = {
-  name: string;
-  description: string;
-  style: TemplateId;
-  category: TemplateCategory;
-  productImage?: string;
-  discount: string;
-  badgeTone: "green" | "red" | "blue" | "amber" | "slate" | "pink" | "cyan";
-};
+import type {
+  SavedWidget,
+  TemplateCategory,
+  TemplateId,
+  TemplateMainTab,
+  TemplateMeta,
+} from "../lib/widgetTemplates";
 
 type ActionResult = {
   error?: string;
 };
 
-type SavedWidget = {
-  id: string;
-  name: string;
-  isDefault: boolean;
-  isActive: boolean;
-  widgetStyle: string;
-  customBlocks: unknown;
-  textColor: string;
-  iconColor: string;
-  bgColor: string;
-  borderColor: string;
-  borderRadius: number;
-  shadow: string | null;
-  glassmorphism: boolean | null;
-  padding: number | null;
-  bgGradient: string | null;
-  showTimeline: boolean;
-  policyText: string | null;
-  headerText: string | null;
-  subHeaderText: string | null;
-  step1Label: string | null;
-  step1SubText: string | null;
-  step1Icon: string | null;
-  step2Label: string | null;
-  step2SubText: string | null;
-  step2Icon: string | null;
-  step3Label: string | null;
-  step3SubText: string | null;
-  step3Icon: string | null;
-  updatedAt: string;
-};
+function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templateName: string) {
+  return {
+    name: templateName || "Template Design",
+    isDefault: false,
+    isActive: true,
+    widgetStyle: "custom",
+    customBlocks: template.customBlocks as unknown as Prisma.InputJsonValue,
+    textColor: template.textColor || "#000000",
+    iconColor: template.iconColor || "#0033cc",
+    bgColor: template.bgColor || "#ffffff",
+    borderColor: template.borderColor || "#e5e7eb",
+    borderRadius: template.borderRadius || 10,
+    shadow: template.shadow || "none",
+    glassmorphism: template.glassmorphism || false,
+    padding: template.padding ?? 16,
+    bgGradient: template.bgGradient || "",
+    showTimeline: template.showTimeline ?? true,
+    policyText: template.policyText ?? null,
+    headerText: template.headerText ?? null,
+    subHeaderText: template.subHeaderText ?? null,
+    step1Label: template.step1Label ?? null,
+    step1SubText: template.step1SubText ?? null,
+    step1Icon: template.step1Icon ?? null,
+    step2Label: template.step2Label ?? null,
+    step2SubText: template.step2SubText ?? null,
+    step2Icon: template.step2Icon ?? null,
+    step3Label: template.step3Label ?? null,
+    step3SubText: template.step3SubText ?? null,
+    step3Icon: template.step3Icon ?? null,
+  };
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -162,66 +147,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     const sourceWidget = await prisma.widget.findFirst({
-      where: { id: widgetId, shop: session.shop },
+      where: { id: widgetId, shop: session.shop, isDefault: false },
     });
 
     if (!sourceWidget) {
       return routerData({ error: "Design not found" }, { status: 404 });
     }
 
-    const defaultWidget = await prisma.widget.findFirst({
-      where: { shop: session.shop, isDefault: true },
+    const params = new URLSearchParams({
+      selectedWidgetId: sourceWidget.id,
+      sourceDesignId: sourceWidget.id,
     });
-
-    const widgetData = {
-      widgetStyle: "custom",
-      customBlocks: sourceWidget.customBlocks as Prisma.InputJsonValue,
-      textColor: sourceWidget.textColor,
-      iconColor: sourceWidget.iconColor,
-      bgColor: sourceWidget.bgColor,
-      borderColor: sourceWidget.borderColor,
-      borderRadius: sourceWidget.borderRadius,
-      shadow: sourceWidget.shadow,
-      glassmorphism: sourceWidget.glassmorphism,
-      padding: sourceWidget.padding,
-      bgGradient: sourceWidget.bgGradient,
-      showTimeline: sourceWidget.showTimeline,
-      policyText: sourceWidget.policyText,
-      headerText: sourceWidget.headerText,
-      subHeaderText: sourceWidget.subHeaderText,
-      step1Label: sourceWidget.step1Label,
-      step1SubText: sourceWidget.step1SubText,
-      step1Icon: sourceWidget.step1Icon,
-      step2Label: sourceWidget.step2Label,
-      step2SubText: sourceWidget.step2SubText,
-      step2Icon: sourceWidget.step2Icon,
-      step3Label: sourceWidget.step3Label,
-      step3SubText: sourceWidget.step3SubText,
-      step3Icon: sourceWidget.step3Icon,
-      updatedAt: new Date(),
-    };
-
-    if (defaultWidget) {
-      await prisma.widget.update({
-        where: { id: defaultWidget.id },
-        data: widgetData,
-      });
-    } else {
-      await prisma.widget.create({
-        data: {
-          shop: session.shop,
-          name: "Main Widget",
-          isDefault: true,
-          isActive: true,
-          ...widgetData,
-        },
-      });
-    }
-
-    const params = new URLSearchParams({ sourceDesignId: sourceWidget.id });
     if (sourceWidget.name) params.set("designName", sourceWidget.name);
 
-    return redirect(`/app/settings?${params.toString()}`);
+    return redirect(`/app/rules/new?${params.toString()}`);
   }
 
   if (!templateId || !TEMPLATE_DEFAULTS[templateId]) {
@@ -229,46 +168,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const def = TEMPLATE_DEFAULTS[templateId];
-  const defaultWidget = await prisma.widget.findFirst({
-    where: { shop: session.shop, isDefault: true },
+  const widget = await prisma.widget.create({
+    data: {
+      shop: session.shop,
+      ...templateWidgetData(def, templateName),
+    },
   });
 
-  const widgetData = {
-    widgetStyle: "custom",
-    customBlocks: def.customBlocks as unknown as Prisma.InputJsonValue,
-    textColor: def.textColor || "#000000",
-    iconColor: def.iconColor || "#0033cc",
-    bgColor: def.bgColor || "#ffffff",
-    borderColor: def.borderColor || "#e5e7eb",
-    borderRadius: def.borderRadius || 10,
-    shadow: def.shadow || "none",
-    glassmorphism: def.glassmorphism || false,
-    padding: def.padding ?? 16,
-    bgGradient: def.bgGradient || "",
-    updatedAt: new Date(),
-  };
+  const params = new URLSearchParams({
+    selectedWidgetId: widget.id,
+    sourceDesignId: widget.id,
+    designName: widget.name,
+  });
 
-  if (defaultWidget) {
-    await prisma.widget.update({
-      where: { id: defaultWidget.id },
-      data: widgetData,
-    });
-  } else {
-    await prisma.widget.create({
-      data: {
-        shop: session.shop,
-        name: "Main Widget",
-        isDefault: true,
-        isActive: true,
-        ...widgetData,
-      },
-    });
-  }
-
-  const params = new URLSearchParams({ templateApplied: "1" });
-  if (templateName) params.set("designName", templateName);
-
-  return redirect(`/app/settings?${params.toString()}`);
+  return redirect(`/app/rules/new?${params.toString()}`);
 };
 
 const CATEGORIES: TemplateCategory[] = [
@@ -634,7 +547,7 @@ function MyDesignCard({
         <div className="mb-3 min-h-[70px]">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             {widget.isDefault && (
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-700">
                 Default
               </span>
             )}
@@ -749,9 +662,9 @@ export default function TemplateBuilder() {
           <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight text-gray-950">Widget Templates</h1>
             <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-blue-500" />
+              <span className="flex h-2 w-2 rounded-full bg-green-500" />
               <p className="text-sm text-gray-500">
-                Pick a ready-made delivery design and apply it to your default storefront widget.
+                Pick a ready-made delivery design and attach it to a delivery rule.
               </p>
             </div>
           </div>

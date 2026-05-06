@@ -3,6 +3,7 @@ import prisma from "../db.server";
 import {
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
+  normalizeCollectionIds,
   normalizeProductIds,
   normalizeTags,
 } from "./delivery";
@@ -39,17 +40,46 @@ export async function ensureDefaultWidget(shop: string): Promise<RuleWidgetOptio
   });
 }
 
+export async function ensureAppSetting(shop: string) {
+  const existing = await prisma.appSetting.findUnique({ where: { shop } });
+  if (existing) return existing;
+
+  return prisma.appSetting.create({
+    data: {
+      shop,
+      isEnabled: true,
+      widgetStyle: "modern",
+    },
+  });
+}
+
+export async function ensureEnabledAppSetting(shop: string) {
+  return prisma.appSetting.upsert({
+    where: { shop },
+    update: { isEnabled: true },
+    create: {
+      shop,
+      isEnabled: true,
+      widgetStyle: "modern",
+    },
+  });
+}
+
 export async function hasDuplicateDeliveryRule({
   shop,
   id,
   countryCode,
+  targetCountries = [],
   targetProducts,
+  targetCollections,
   targetTags,
 }: {
   shop: string;
   id?: string;
   countryCode: string;
+  targetCountries?: string[];
   targetProducts: string[];
+  targetCollections: string[];
   targetTags: string[];
 }) {
   const possibleDuplicates = await prisma.deliveryRule.findMany({
@@ -62,7 +92,9 @@ export async function hasDuplicateDeliveryRule({
 
   return possibleDuplicates.some((rule) => {
     return (
+      sameStringArray(jsonStringArray(rule.targetCountries), targetCountries) &&
       sameStringArray(normalizeProductIds(jsonStringArray(rule.targetProducts)), targetProducts) &&
+      sameStringArray(normalizeCollectionIds(jsonStringArray(rule.targetCollections)), targetCollections) &&
       sameStringArray(normalizeTags(jsonStringArray(rule.targetTags)), targetTags)
     );
   });

@@ -3,7 +3,10 @@ import { data } from "react-router";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import {
+  ALL_COUNTRIES_CODE,
   DEFAULT_SHIPPING_MESSAGE,
+  LEGACY_ALL_COUNTRIES_CODE,
+  normalizeCollectionIds,
   normalizeCountry,
   normalizeProductId,
   normalizeTags,
@@ -14,10 +17,10 @@ import type { APIDeliveryResponse } from "../lib/delivery";
 
 function detectCountryFromHeaders(request: Request): string {
   return normalizeCountry(
-    request.headers.get("cf-ipcountry") ||
+      request.headers.get("cf-ipcountry") ||
       request.headers.get("x-shopify-ip-country") ||
       request.headers.get("geoip-country-code") ||
-      "OTHER",
+      ALL_COUNTRIES_CODE,
   );
 }
 
@@ -63,13 +66,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop = appProxyContext.session?.shop;
 
   if (!shop) {
-    return disabledResponse("OTHER", "missing_session");
+    return disabledResponse(ALL_COUNTRIES_CODE, "missing_session");
   }
 
   const countryCode = url.searchParams.get("country")
     ? normalizeCountry(url.searchParams.get("country"))
     : detectCountryFromHeaders(request);
   const productId = normalizeProductId(url.searchParams.get("product_id"));
+  const productCollectionIds = normalizeCollectionIds(url.searchParams.get("collections"));
   const productTags = normalizeTags(url.searchParams.get("tags") || "");
 
   const [rules, defaultWidget, globalSettings] = await Promise.all([
@@ -77,7 +81,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       where: {
         shop,
         isActive: true,
-        countryCode: { in: [countryCode, "OTHER"] },
+        countryCode: { in: [countryCode, ALL_COUNTRIES_CODE, LEGACY_ALL_COUNTRIES_CODE] },
       },
       include: { widget: true },
       orderBy: [{ createdAt: "desc" }],
@@ -88,7 +92,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     prisma.appSetting.findUnique({ where: { shop } }),
   ]);
 
-  const rule = selectDeliveryRule(rules, countryCode, productTags, productId);
+  const rule = selectDeliveryRule(rules, countryCode, productTags, productId, productCollectionIds);
   const selectedWidget = rule?.widget?.isActive ? rule.widget : defaultWidget;
 
   if (!globalSettings?.isEnabled || !selectedWidget || !rule) {

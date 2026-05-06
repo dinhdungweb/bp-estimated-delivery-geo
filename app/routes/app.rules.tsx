@@ -3,33 +3,42 @@
  * Copyright (c) 2025 BluePeaks. All rights reserved.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { Prisma } from "@prisma/client";
 import {
   data,
   useActionData,
   useLoaderData,
+  useLocation,
   useNavigate,
   useNavigation,
   useSubmit,
 } from "react-router";
-import { Badge, Banner, Text } from "@shopify/polaris";
-import { useCallback, useMemo } from "react";
+import { Badge, Banner, Icon } from "@shopify/polaris";
+import { DeleteIcon, EditIcon, InfoIcon } from "@shopify/polaris-icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { normalizeProductIds, normalizeTags } from "../lib/delivery";
+import { isAllCountriesCode, normalizeCollectionIds, normalizeProductIds, normalizeTags } from "../lib/delivery";
 import {
   daysLabel,
   getRuleCountryLabel,
   jsonStringArray,
   previewRuleMessage,
+  RULE_COUNTRIES,
 } from "../lib/deliveryRules";
 import { ensureDefaultWidget } from "../lib/deliveryRules.server";
 
 type RuleRow = {
   id: string;
+  ruleName: string;
   countryCode: string;
+  targetCountries: unknown;
+  marketId: string | null;
+  marketName: string | null;
   widgetId: string | null;
   widgetName: string | null;
   targetProducts: unknown;
+  targetCollections: unknown;
   targetTags: unknown;
   minDays: number;
   maxDays: number;
@@ -43,14 +52,97 @@ type ActionResult = {
   error?: string;
 };
 
+const BUTTON_BASE =
+  "inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50";
+const BUTTON_PRIMARY = `${BUTTON_BASE} bg-gray-900 text-white shadow-md shadow-gray-200 hover:bg-black`;
+const BUTTON_SECONDARY = `${BUTTON_BASE} border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50`;
+const BUTTON_DANGER = `${BUTTON_BASE} border border-red-200 bg-white text-red-600 shadow-sm hover:bg-red-50`;
+const ICON_BUTTON_SECONDARY =
+  "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+const ICON_BUTTON_DANGER =
+  "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-white text-red-600 shadow-sm transition-all hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50";
+const BULK_BUTTON_BASE =
+  "inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50";
+const BULK_BUTTON_PRIMARY = `${BULK_BUTTON_BASE} bg-gray-900 text-white shadow-sm hover:bg-black`;
+const BULK_BUTTON_SECONDARY = `${BULK_BUTTON_BASE} border border-gray-200 bg-white text-gray-700 hover:bg-gray-50`;
+const BULK_BUTTON_DANGER = `${BULK_BUTTON_BASE} border border-red-200 bg-white text-red-600 hover:bg-red-50`;
+const RULE_COUNTRY_COUNT = RULE_COUNTRIES.length;
+const RULES_PER_PAGE = 50;
+const STATUS_FILTERS = new Set(["all", "active", "draft"]);
+
+function ruleTargetingSummary(rule: Pick<RuleRow, "targetProducts" | "targetCollections" | "targetTags">) {
+  const products = normalizeProductIds(jsonStringArray(rule.targetProducts));
+  if (products.length > 0) return { label: "Products", value: products.join(", ") };
+
+  const collections = normalizeCollectionIds(jsonStringArray(rule.targetCollections));
+  if (collections.length > 0) return { label: "Collections", value: collections.join(", ") };
+
+  const tags = normalizeTags(jsonStringArray(rule.targetTags));
+  if (tags.length > 0) return { label: "Tags", value: tags.join(", ") };
+
+  return { label: "Country-wide", value: "All products" };
+}
+
+function ruleCountrySummary(rule: Pick<RuleRow, "countryCode" | "targetCountries" | "marketId" | "marketName">) {
+  const targetCountries = jsonStringArray(rule.targetCountries);
+  if (rule.marketName) {
+    return {
+      label: rule.marketName,
+      detail: `${targetCountries.length} countr${targetCountries.length === 1 ? "y" : "ies"} from Shopify Market`,
+    };
+  }
+
+  if (targetCountries.length > 0) {
+    return {
+      label: `${targetCountries.length} countries`,
+      detail: targetCountries.slice(0, 4).join(", ") + (targetCountries.length > 4 ? `, +${targetCountries.length - 4} more` : ""),
+    };
+  }
+
+  if (isAllCountriesCode(rule.countryCode)) {
+    return {
+      label: "All countries",
+      detail: `${RULE_COUNTRY_COUNT} countries`,
+    };
+  }
+
+  return {
+    label: getRuleCountryLabel(rule.countryCode),
+    detail: rule.countryCode,
+  };
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
   await ensureDefaultWidget(session.shop);
+  const query = (url.searchParams.get("q") || "").trim().slice(0, 120);
+  const rawStatus = url.searchParams.get("status") || "all";
+  const status = STATUS_FILTERS.has(rawStatus) ? rawStatus : "all";
+  const where: Prisma.DeliveryRuleWhereInput = { shop: session.shop };
+
+  if (query) {
+    where.ruleName = { contains: query, mode: "insensitive" };
+  }
+
+  if (status === "active") {
+    where.isActive = true;
+  } else if (status === "draft") {
+    where.isActive = false;
+  }
+
+  const requestedPage = Math.max(1, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1);
+  const totalRules = await prisma.deliveryRule.count({
+    where,
+  });
+  const totalPages = Math.max(1, Math.ceil(totalRules / RULES_PER_PAGE));
+  const currentPage = Math.min(requestedPage, totalPages);
 
   const rules = await prisma.deliveryRule.findMany({
-    where: { shop: session.shop },
+    where,
     orderBy: [{ isActive: "desc" }, { countryCode: "asc" }, { createdAt: "desc" }],
+    skip: (currentPage - 1) * RULES_PER_PAGE,
+    take: RULES_PER_PAGE,
     include: { widget: { select: { id: true, name: true, isDefault: true, isActive: true } } },
   });
 
@@ -60,6 +152,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       widgetName: widget?.name ?? null,
     })),
     ruleSaved: url.searchParams.get("ruleSaved") === "1",
+    pagination: {
+      currentPage,
+      totalPages,
+      totalRules,
+      pageSize: RULES_PER_PAGE,
+      from: totalRules === 0 ? 0 : (currentPage - 1) * RULES_PER_PAGE + 1,
+      to: Math.min(currentPage * RULES_PER_PAGE, totalRules),
+    },
+    filters: {
+      query,
+      status,
+    },
   });
 };
 
@@ -67,6 +171,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent"));
+  const bulkIds = formData.getAll("ids").map(String).filter(Boolean);
 
   if (intent === "delete") {
     const id = String(formData.get("id"));
@@ -84,6 +189,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return data({ success: true });
   }
 
+  if (intent === "bulk-status") {
+    if (!bulkIds.length) {
+      return data({ error: "Select at least one rule." }, { status: 400 });
+    }
+
+    const status = String(formData.get("status"));
+    if (status !== "active" && status !== "draft") {
+      return data({ error: "Invalid bulk status." }, { status: 400 });
+    }
+
+    await prisma.deliveryRule.updateMany({
+      where: { id: { in: bulkIds }, shop: session.shop },
+      data: { isActive: status === "active" },
+    });
+    return data({ success: true });
+  }
+
+  if (intent === "bulk-delete") {
+    if (!bulkIds.length) {
+      return data({ error: "Select at least one rule." }, { status: 400 });
+    }
+
+    await prisma.deliveryRule.deleteMany({
+      where: { id: { in: bulkIds }, shop: session.shop },
+    });
+    return data({ success: true });
+  }
+
   return data({ error: "Unknown intent." }, { status: 400 });
 };
 
@@ -92,61 +225,182 @@ export default function RulesPage() {
   const rules = useMemo(() => (loaderData?.rules ?? []) as RuleRow[], [loaderData?.rules]);
   const actionData = useActionData() as ActionResult | undefined;
   const submit = useSubmit();
+  const location = useLocation();
   const navigate = useNavigate();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const actionError = actionData?.error;
+  const pagination = loaderData.pagination;
+  const filters = loaderData.filters;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState(filters.query);
+  const [statusFilter, setStatusFilter] = useState(filters.status);
+  const [toastMessage, setToastMessage] = useState<string | null>(
+    loaderData.ruleSaved ? "Delivery rule saved" : null,
+  );
 
-  const summary = useMemo(() => {
-    const active = rules.filter((rule) => rule.isActive).length;
-    const fallbackRule = rules.find((rule) => rule.countryCode === "OTHER");
-    const averageMax = rules.length
-      ? Math.round(rules.reduce((sum, rule) => sum + rule.maxDays, 0) / rules.length)
-      : 0;
+  const ruleIds = useMemo(() => rules.map((rule) => rule.id), [rules]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedCount = selectedIds.length;
+  const allSelected = ruleIds.length > 0 && ruleIds.every((id) => selectedIdSet.has(id));
+  const hasActiveFilters = Boolean(filters.query || filters.status !== "all");
+  const pageUrl = useCallback((page: number) => {
+    const params = new URLSearchParams(location.search);
+    params.set("page", String(page));
+    params.delete("ruleSaved");
+    const query = params.toString();
+    return `${location.pathname}${query ? `?${query}` : ""}`;
+  }, [location.pathname, location.search]);
 
-    return {
-      total: rules.length,
-      active,
-      inactive: rules.length - active,
-      fallback: fallbackRule ? "Configured" : "Missing",
-      averageMax,
-    };
-  }, [rules]);
+  const navigateWithFilters = useCallback((nextSearchQuery: string, nextStatusFilter: string) => {
+    const params = new URLSearchParams(location.search);
+    const nextQuery = nextSearchQuery.trim();
+
+    params.delete("ruleSaved");
+    params.set("page", "1");
+    if (nextQuery) params.set("q", nextQuery);
+    else params.delete("q");
+
+    if (nextStatusFilter !== "all") params.set("status", nextStatusFilter);
+    else params.delete("status");
+
+    const query = params.toString();
+    const nextUrl = `${location.pathname}${query ? `?${query}` : ""}`;
+    if (nextUrl !== `${location.pathname}${location.search}`) {
+      navigate(nextUrl, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
+
+  const clearFilters = useCallback(() => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    const params = new URLSearchParams(location.search);
+    params.delete("q");
+    params.delete("status");
+    params.delete("page");
+    params.delete("ruleSaved");
+    const query = params.toString();
+    navigate(`${location.pathname}${query ? `?${query}` : ""}`);
+  }, [location.pathname, location.search, navigate]);
 
   const handleDelete = useCallback((id: string) => {
     if (!confirm("Delete this delivery rule?")) return;
     submit({ intent: "delete", id }, { method: "post" });
   }, [submit]);
 
-  const handleToggle = useCallback((id: string, isActive: boolean) => {
-    submit({ intent: "toggle", id, isActive: String(isActive) }, { method: "post" });
-  }, [submit]);
+  const toggleRuleSelection = useCallback((id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((selectedId) => selectedId !== id)
+        : [...current, id],
+    );
+  }, []);
+
+  const toggleAllSelection = useCallback(() => {
+    setSelectedIds((current) => {
+      const currentSet = new Set(current);
+      const isAllSelected = ruleIds.length > 0 && ruleIds.every((id) => currentSet.has(id));
+
+      if (isAllSelected) {
+        return current.filter((id) => !ruleIds.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...ruleIds]));
+    });
+  }, [ruleIds]);
+
+  const submitBulkAction = useCallback((intent: "bulk-status" | "bulk-delete", status?: "active" | "draft") => {
+    if (!selectedIds.length) return;
+    if (intent === "bulk-delete" && !confirm(`Delete ${selectedIds.length} selected delivery rules?`)) return;
+
+    const formData = new FormData();
+    formData.append("intent", intent);
+    selectedIds.forEach((id) => formData.append("ids", id));
+    if (status) formData.append("status", status);
+    submit(formData, { method: "post" });
+  }, [selectedIds, submit]);
+
+  useEffect(() => {
+    const visibleIds = new Set(ruleIds);
+    setSelectedIds((current) => current.filter((id) => visibleIds.has(id)));
+  }, [ruleIds]);
+
+  useEffect(() => {
+    setSearchQuery(filters.query);
+    setStatusFilter(filters.status);
+  }, [filters.query, filters.status]);
+
+  useEffect(() => {
+    if (searchQuery === filters.query) return;
+
+    const timer = window.setTimeout(() => {
+      navigateWithFilters(searchQuery, statusFilter);
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [filters.query, navigateWithFilters, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (actionData?.success && navigation.state === "idle") {
+      setSelectedIds([]);
+      setToastMessage("Delivery rules updated");
+    }
+  }, [actionData?.success, navigation.state]);
+
+  useEffect(() => {
+    if (loaderData.ruleSaved) {
+      setToastMessage("Delivery rule saved");
+    }
+  }, [loaderData.ruleSaved]);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+
+    const timer = window.setTimeout(() => setToastMessage(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
-      <div className="mx-auto max-w-6xl space-y-4">
+      {toastMessage && (
+        <div className="fixed right-5 top-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-green-200 bg-white shadow-xl">
+          <div className="flex items-start gap-3 p-4">
+            <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-gray-900">{toastMessage}</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">
+                Your delivery rule changes are now saved.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastMessage(null)}
+              className="text-xs font-bold text-gray-400 transition-colors hover:text-gray-900"
+              aria-label="Dismiss notification"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full space-y-4">
         <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">Delivery Rules</h1>
             <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-blue-500" />
+              <span className="flex h-2 w-2 rounded-full bg-green-500" />
               <p className="text-sm text-gray-500">Control estimated delivery dates by country, product, tag, and design.</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => navigate("/app/rules/new")}
-            className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-colors hover:bg-black"
+            className={`${BUTTON_PRIMARY} whitespace-nowrap`}
           >
             Add rule
           </button>
         </div>
-
-        {loaderData.ruleSaved && (
-          <Banner title="Delivery rule saved" tone="success">
-            <p>Your rule targeting, ETA settings, and selected design are now saved.</p>
-          </Banner>
-        )}
 
         {actionError && (
           <Banner title="Rule action failed" tone="critical">
@@ -154,159 +408,301 @@ export default function RulesPage() {
           </Banner>
         )}
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Total rules</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{summary.total}</p>
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-sky-200 bg-sky-300 px-5 py-4">
+            <span className="h-4 w-4 text-gray-900">
+              <Icon source={InfoIcon} />
+            </span>
+            <h2 className="text-sm font-bold text-gray-900">How storefront matching works</h2>
           </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active</p>
-            <p className="mt-2 text-2xl font-bold text-green-700">{summary.active}</p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Fallback</p>
-            <p className="mt-2 text-lg font-bold text-gray-900">{summary.fallback}</p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Avg max ETA</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">
-              {summary.averageMax ? daysLabel(summary.averageMax) : "-"}
+          <div className="p-5">
+            <p className="max-w-4xl text-sm leading-6 text-gray-500">
+              The storefront matches product rules first, then collection rules, then tag rules,
+              then country rules, and finally any All countries rule. Each rule renders the design selected for that rule.
             </p>
           </div>
         </div>
 
-        <Banner title="How storefront matching works" tone="info">
-          <p>
-            The storefront matches product-specific rules first, then tag rules, then country rules,
-            and finally Rest of World. Each rule renders the design selected for that rule.
-          </p>
-        </Banner>
-
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <Text as="h2" variant="headingMd">Country ETA rules</Text>
+              <h2 className="text-base font-bold text-gray-800">Country ETA rules</h2>
               <p className="mt-1 text-xs text-gray-500">
                 Use the rule editor to choose a design and configure targeting.
               </p>
             </div>
-            {summary.inactive > 0 && (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                {summary.inactive} inactive
-              </span>
-            )}
+            <div
+              className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:items-center"
+            >
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search rule name..."
+                className="h-9 min-w-0 rounded-xl border border-gray-200 bg-white px-3 pb-1 pt-0 text-sm leading-normal text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 sm:w-64"
+              />
+              <div className="relative">
+                <select
+                  value={statusFilter}
+                  onChange={(event) => {
+                    const nextStatus = event.target.value;
+                    setStatusFilter(nextStatus);
+                    navigateWithFilters(searchQuery, nextStatus);
+                  }}
+                  className="h-9 appearance-none rounded-xl border border-gray-200 bg-white pb-1 pl-3 pr-10 pt-0 text-xs font-bold leading-normal text-gray-700 shadow-sm outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                >
+                  <option value="all">All status</option>
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                </select>
+                <svg
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-700"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                >
+                  <path
+                    d="M6 8l4 4 4-4"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              {(filters.query || filters.status !== "all") && (
+                <button type="button" onClick={clearFilters} className={BUTTON_SECONDARY}>
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           {rules.length === 0 ? (
             <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
               <div className="mb-4 rounded-full bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-500">
-                No rules
+                {hasActiveFilters ? "No matching rules" : "No rules"}
               </div>
-              <h3 className="text-base font-bold text-gray-900">Create your first delivery rule</h3>
+              <h3 className="text-base font-bold text-gray-900">
+                {hasActiveFilters ? "No rules match this search" : "Create your first delivery rule"}
+              </h3>
               <p className="mt-2 max-w-md text-sm text-gray-500">
-                Add a country rule so the storefront can calculate delivery dates and render the selected ETA design.
+                {hasActiveFilters
+                  ? "Try a different rule name or status filter."
+                  : "Add a country rule so the storefront can calculate delivery dates and render the selected ETA design."}
               </p>
-              <button
-                type="button"
-                onClick={() => navigate("/app/rules/new")}
-                className="mt-5 inline-flex h-9 items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white hover:bg-black"
-              >
-                Add first rule
-              </button>
+              {hasActiveFilters ? (
+                <button type="button" onClick={clearFilters} className={`${BUTTON_SECONDARY} mt-5`}>
+                  Clear filters
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => navigate("/app/rules/new")}
+                  className={`${BUTTON_PRIMARY} mt-5`}
+                >
+                  Add first rule
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-left">
+              <table className="w-full min-w-[1320px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Country</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Design</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Product / tag targeting</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Timeline</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Storefront message</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Status</th>
-                    <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-gray-500">Actions</th>
+                    <th className="w-12 px-5 py-3 align-middle">
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all delivery rules on this page"
+                          checked={allSelected}
+                          onChange={toggleAllSelection}
+                          className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                        />
+                      </div>
+                    </th>
+                    {selectedCount > 0 ? (
+                      <th colSpan={8} className="px-5 py-2">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <p className="text-xs font-semibold normal-case tracking-normal text-gray-700">
+                            {selectedCount} selected
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => submitBulkAction("bulk-status", "active")}
+                              disabled={isSubmitting}
+                              className={BULK_BUTTON_PRIMARY}
+                            >
+                              Set active
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => submitBulkAction("bulk-status", "draft")}
+                              disabled={isSubmitting}
+                              className={BULK_BUTTON_SECONDARY}
+                            >
+                              Set draft
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => submitBulkAction("bulk-delete")}
+                              disabled={isSubmitting}
+                              className={BULK_BUTTON_DANGER}
+                            >
+                              Delete selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedIds([])}
+                              disabled={isSubmitting}
+                              className={BULK_BUTTON_SECONDARY}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      </th>
+                    ) : (
+                      <>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Rule name</th>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Country</th>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Design</th>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Targeting</th>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Timeline</th>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Storefront message</th>
+                        <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">Status</th>
+                        <th className="px-5 py-3 text-right text-[11px] font-bold uppercase tracking-wide text-gray-500">Actions</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {rules.map((rule) => (
-                    <tr key={rule.id} className="align-top transition-colors hover:bg-gray-50">
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-bold text-gray-900">{getRuleCountryLabel(rule.countryCode)}</p>
-                        <p className="mt-1 text-xs text-gray-400">{rule.countryCode}</p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-bold text-gray-800">{rule.widgetName || "Default Widget"}</p>
-                        <p className="mt-1 text-xs text-gray-400">
-                          {rule.widgetId ? "Rule design" : "Fallback default"}
-                        </p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="space-y-1 text-xs text-gray-500">
-                          <p>
-                            Products:{" "}
-                            <span className="font-semibold text-gray-700">
-                              {normalizeProductIds(jsonStringArray(rule.targetProducts)).join(", ") || "All"}
-                            </span>
-                          </p>
-                          <p>
-                            Tags:{" "}
-                            <span className="font-semibold text-gray-700">
-                              {normalizeTags(jsonStringArray(rule.targetTags)).join(", ") || "All"}
-                            </span>
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="space-y-1">
-                          <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-                            {daysLabel(rule.minDays)} - {daysLabel(rule.maxDays)}
-                          </span>
-                          <p className="text-xs text-gray-500">Processing: {daysLabel(rule.processingDays)}</p>
-                        </div>
-                      </td>
-                      <td className="max-w-md px-5 py-4">
-                        <p className="line-clamp-2 text-sm font-medium text-gray-700">{rule.shippingMessage}</p>
-                        <p className="mt-1 line-clamp-1 text-xs text-gray-400">
-                          Preview: {previewRuleMessage(rule.shippingMessage)}
-                        </p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <Badge tone={rule.isActive ? "success" : "critical"}>
-                          {rule.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/app/rules/${rule.id}`)}
-                            className="inline-flex h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700 shadow-sm hover:bg-gray-50"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggle(rule.id, rule.isActive)}
-                            disabled={isSubmitting}
-                            className="inline-flex h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            {rule.isActive ? "Disable" : "Enable"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(rule.id)}
-                            disabled={isSubmitting}
-                            className="inline-flex h-9 items-center justify-center rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {rules.map((rule) => {
+                    const targeting = ruleTargetingSummary(rule);
+                    const country = ruleCountrySummary(rule);
+
+                    return (
+                        <tr
+                          key={rule.id}
+                          className={`align-top transition-colors hover:bg-gray-50/80 ${
+                            selectedIdSet.has(rule.id) ? "bg-gray-50" : ""
+                          }`}
+                        >
+                          <td className="px-5 py-4 align-middle">
+                            <div className="flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select rule for ${getRuleCountryLabel(rule.countryCode)}`}
+                                checked={selectedIdSet.has(rule.id)}
+                                onChange={() => toggleRuleSelection(rule.id)}
+                                className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="max-w-[220px] truncate text-sm font-bold text-gray-900">
+                              {rule.ruleName || "Delivery rule"}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-400">Rule ID: {rule.id.slice(0, 8)}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="text-sm font-bold text-gray-900">{country.label}</p>
+                            <p className="mt-1 max-w-[220px] truncate text-xs text-gray-400">{country.detail}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="text-sm font-bold text-gray-800">{rule.widgetName || "Default Widget"}</p>
+                            <p className="mt-1 text-xs text-gray-400">
+                              {rule.widgetId ? "Rule design" : "Fallback default"}
+                            </p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="space-y-1 text-xs text-gray-500">
+                              <p className="font-semibold text-gray-700">{targeting.label}</p>
+                              <p className="max-w-[260px] truncate">{targeting.value}</p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="space-y-1">
+                              <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">
+                                {daysLabel(rule.minDays)} - {daysLabel(rule.maxDays)}
+                              </span>
+                              <p className="text-xs text-gray-500">Processing: {daysLabel(rule.processingDays)}</p>
+                            </div>
+                          </td>
+                          <td className="max-w-xl px-5 py-4">
+                            <p className="line-clamp-2 text-sm font-medium text-gray-700">{rule.shippingMessage}</p>
+                            <p className="mt-1 line-clamp-1 text-xs text-gray-400">
+                              Preview: {previewRuleMessage(rule.shippingMessage)}
+                            </p>
+                          </td>
+                          <td className="px-5 py-4 align-middle">
+                            <Badge tone={rule.isActive ? "success" : "critical"}>
+                              {rule.isActive ? "Active" : "Draft"}
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-4 align-middle">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/app/rules/${rule.id}`)}
+                                aria-label={`Edit rule for ${getRuleCountryLabel(rule.countryCode)}`}
+                                title="Edit"
+                                className={ICON_BUTTON_SECONDARY}
+                              >
+                                <span className="h-4 w-4">
+                                  <Icon source={EditIcon} />
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(rule.id)}
+                                disabled={isSubmitting}
+                                aria-label={`Delete rule for ${getRuleCountryLabel(rule.countryCode)}`}
+                                title="Delete"
+                                className={ICON_BUTTON_DANGER}
+                              >
+                                <span className="h-4 w-4">
+                                  <Icon source={DeleteIcon} />
+                                </span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              <div className="flex flex-col gap-3 border-t border-gray-100 bg-white px-5 py-4 md:flex-row md:items-center md:justify-between">
+                <p className="text-xs font-medium text-gray-500">
+                  Showing <span className="font-bold text-gray-900">{pagination.from}</span>
+                  {" - "}
+                  <span className="font-bold text-gray-900">{pagination.to}</span>
+                  {" of "}
+                  <span className="font-bold text-gray-900">{pagination.totalRules}</span> rules
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(pageUrl(pagination.currentPage - 1))}
+                    disabled={pagination.currentPage <= 1}
+                    className={BUTTON_SECONDARY}
+                  >
+                    Previous
+                  </button>
+                  <span className="inline-flex h-9 items-center rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs font-bold text-gray-700">
+                    Page {pagination.currentPage} / {pagination.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate(pageUrl(pagination.currentPage + 1))}
+                    disabled={pagination.currentPage >= pagination.totalPages}
+                    className={BUTTON_SECONDARY}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -335,6 +335,26 @@ const getBlockLabel = (type: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
+function safeReturnTo(value: string | null) {
+  if (!value) return "/app/templates?tab=my-design";
+  if (!value.startsWith("/app/")) return "/app/templates?tab=my-design";
+  if (value.startsWith("//")) return "/app/templates?tab=my-design";
+  return value;
+}
+
+function returnToWithSelectedWidget(value: string | null, selectedWidgetId: string) {
+  const returnTo = safeReturnTo(value);
+  if (!selectedWidgetId || !returnTo.startsWith("/app/rules/")) return returnTo;
+
+  try {
+    const url = new URL(returnTo, "https://app.local");
+    url.searchParams.set("selectedWidgetId", selectedWidgetId);
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return returnTo;
+  }
+}
+
 export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const widgetId = params.id;
@@ -411,6 +431,10 @@ export default function VisualBuilderStudio() {
   const sourceDesignId = editorSearchParams.get("sourceDesignId") || "";
   const designName = editorSearchParams.get("designName") || "";
   const designSavedFromUrl = editorSearchParams.get("designSaved") === "1";
+  const returnTo = returnToWithSelectedWidget(
+    editorSearchParams.get("returnTo"),
+    sourceDesignId || widget.id,
+  );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
 
@@ -469,7 +493,7 @@ export default function VisualBuilderStudio() {
     }
 
     if (actionData?.success && actionData.newId) {
-      navigate(`/app/widgets/${actionData.newId}`, { replace: true });
+      navigate(`/app/widgets/${actionData.newId}${location.search}`, { replace: true });
       return;
     }
 
@@ -1466,7 +1490,7 @@ export default function VisualBuilderStudio() {
       <Box padding="300" background="bg-surface" borderBlockEndWidth="025" borderColor="border">
         <InlineStack align="space-between" blockAlign="center">
           <InlineStack gap="300" blockAlign="center">
-            <Button icon={ChevronLeftIcon} variant="tertiary" onClick={() => navigate("/app/templates?tab=my-design")} />
+            <Button icon={ChevronLeftIcon} variant="tertiary" onClick={() => navigate(returnTo)} />
             <Box width="1px" minHeight="24px" background="bg-fill-tertiary" />
             <div style={{ width: 250 }}>
               <TextField 

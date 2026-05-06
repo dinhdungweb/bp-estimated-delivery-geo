@@ -555,13 +555,13 @@ export default function Dashboard() {
             {yLabels.map((v) => (
               <div key={v} className="border-b border-gray-100 h-4" />
             ))}
-            <SparkLine color="#3b82f6" />
+            <SparkLine color="#111827" />
           </div>
         </div>
         {/* Legend */}
         <div className="flex items-center gap-4 mt-3">
           <div className="flex items-center gap-1.5">
-            <span className="w-6 h-0.5 bg-blue-500 inline-block" />
+            <span className="w-6 h-0.5 bg-gray-900 inline-block" />
             <span className="text-xs text-gray-500">Desktop</span>
           </div>
           <div className="flex items-center gap-1.5">

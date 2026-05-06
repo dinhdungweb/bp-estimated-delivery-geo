@@ -118,7 +118,7 @@ const widgetDataArbitrary = fc.record({
  * Generator for valid delivery rule data
  */
 const deliveryRuleArbitrary = fc.record({
-  countryCode: fc.constantFrom('US', 'VN', 'GB', 'AU', 'OTHER'),
+  countryCode: fc.constantFrom('US', 'VN', 'GB', 'AU', 'ALL'),
   minDays: fc.integer({ min: 1, max: 10 }),
   maxDays: fc.integer({ min: 5, max: 30 }),
   processingDays: fc.integer({ min: 0, max: 5 }),
@@ -420,7 +420,7 @@ describe('Preservation Properties: Non-Visual Functionality', () => {
       await prisma.deliveryRule.create({
         data: {
           shop: TEST_SHOP,
-          countryCode: 'OTHER',
+          countryCode: 'ALL',
           minDays: 3,
           maxDays: 7,
           processingDays: 1,
@@ -431,7 +431,7 @@ describe('Preservation Properties: Non-Visual Functionality', () => {
       // Simulate API call (we'll verify the response structure)
       const mockResponse: APIDeliveryResponse = {
         enabled: true,
-        countryCode: 'OTHER',
+        countryCode: 'ALL',
         orderDate: 'Jan 10',
         shipDate: 'Jan 12',
         minDate: 'Jan 13',
@@ -493,7 +493,7 @@ describe('Preservation Properties: Non-Visual Functionality', () => {
       // Simulate API call
       const mockResponse: APIDeliveryResponse = {
         enabled: false,
-        countryCode: 'OTHER',
+        countryCode: 'ALL',
         reason: 'disabled_or_missing_config',
       };
 

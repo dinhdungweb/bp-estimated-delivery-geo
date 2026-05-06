@@ -6,7 +6,7 @@ export default function AdditionalPage() {
           <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">Additional Resources</h1>
             <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-blue-500" />
+              <span className="flex h-2 w-2 rounded-full bg-green-500" />
               <p className="text-sm text-gray-500">Documentation and developer resources.</p>
             </div>
           </div>

@@ -5,6 +5,7 @@ import path from "path";
 import {
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
+  normalizeCollectionIds,
   normalizeCountries,
   normalizePolicyItems,
   normalizeProductIds,
@@ -60,9 +61,14 @@ function rule(overrides: Partial<DeliveryRule>): DeliveryRule {
   return {
     id: "rule",
     shop: "shop.myshopify.com",
-    countryCode: "OTHER",
+    ruleName: "Delivery rule",
+    countryCode: "ALL",
+    targetCountries: null,
+    marketId: null,
+    marketName: null,
     widgetId: null,
     targetProducts: null,
+    targetCollections: null,
     targetTags: null,
     minDays: 3,
     maxDays: 7,
@@ -79,6 +85,10 @@ describe("delivery production helpers", () => {
   it("normalizes country and tag targeting before save/read", () => {
     expect(normalizeCountries(["us", " VN ", "bad", "US"])).toEqual(["US", "VN"]);
     expect(normalizeProductIds(["gid://shopify/Product/123", " 456 ", "123"])).toEqual([
+      "123",
+      "456",
+    ]);
+    expect(normalizeCollectionIds(["gid://shopify/Collection/123", " 456 ", "123"])).toEqual([
       "123",
       "456",
     ]);
@@ -168,20 +178,49 @@ describe("delivery production helpers", () => {
     expect(selectWidget([matchAllWidget], "CA", [])?.id).toBe("match-all");
   });
 
-  it("selects delivery rules by product, then tag, then country, then rest of world", () => {
-    const restOfWorldRule = rule({ id: "rest", countryCode: "OTHER" });
+  it("selects delivery rules by product, then collection, then tag, then country, then rest of world", () => {
+    const restOfWorldRule = rule({ id: "rest", countryCode: "ALL" });
     const countryRule = rule({ id: "country", countryCode: "US" });
     const tagRule = rule({ id: "tag", countryCode: "US", targetTags: ["vip"] });
+    const collectionRule = rule({ id: "collection", countryCode: "US", targetCollections: ["987"] });
     const productRule = rule({ id: "product", countryCode: "US", targetProducts: ["123"] });
+    const marketRule = rule({
+      id: "market",
+      countryCode: "ALL",
+      targetCountries: ["CA", "MX"],
+      marketId: "gid://shopify/Market/1",
+      marketName: "North America",
+    });
+    const broadCountryGroupRule = rule({
+      id: "broad-country-group",
+      countryCode: "ALL",
+      targetCountries: ["US", "CA", "MX", "GB", "AU"],
+    });
+    const narrowCountryGroupRule = rule({
+      id: "narrow-country-group",
+      countryCode: "ALL",
+      targetCountries: ["US", "CA"],
+    });
 
     expect(
-      selectDeliveryRule([restOfWorldRule, countryRule, tagRule, productRule], "US", ["vip"], "123")?.id,
+      selectDeliveryRule([restOfWorldRule, countryRule, tagRule, collectionRule, productRule], "US", ["vip"], "123", ["987"])?.id,
     ).toBe("product");
+    expect(
+      selectDeliveryRule([restOfWorldRule, countryRule, tagRule, collectionRule], "US", ["VIP"], "", ["987"])?.id,
+    ).toBe("collection");
     expect(selectDeliveryRule([restOfWorldRule, countryRule, tagRule], "US", ["VIP"])?.id).toBe(
       "tag",
     );
     expect(selectDeliveryRule([restOfWorldRule, countryRule], "US", [])?.id).toBe("country");
+    expect(selectDeliveryRule([restOfWorldRule, marketRule], "CA", [])?.id).toBe("market");
+    expect(selectDeliveryRule([marketRule, restOfWorldRule], "FR", [])?.id).toBe("rest");
     expect(selectDeliveryRule([restOfWorldRule], "CA", [])?.id).toBe("rest");
+    expect(selectDeliveryRule([broadCountryGroupRule, narrowCountryGroupRule], "US", [])?.id).toBe(
+      "narrow-country-group",
+    );
+    expect(selectDeliveryRule([narrowCountryGroupRule, countryRule], "US", [])?.id).toBe(
+      "country",
+    );
   });
 });
 
@@ -413,7 +452,7 @@ describe("storefront embed sanitization", () => {
 
     const payload = {
       enabled: true,
-      countryCode: "OTHER",
+      countryCode: "ALL",
       orderDate: "Jan 1",
       shipDate: "Jan 2",
       minDate: "Jan 3",
@@ -469,7 +508,7 @@ describe("storefront embed sanitization", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       json: async () => ({
         enabled: false,
-        countryCode: "OTHER",
+        countryCode: "ALL",
         reason: "disabled_or_missing_config",
       }),
     });

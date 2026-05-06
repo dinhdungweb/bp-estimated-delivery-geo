@@ -1,5 +1,13 @@
 import type { DeliveryRule, Prisma, Widget } from "@prisma/client";
 
+export const ALL_COUNTRIES_CODE = "ALL";
+export const LEGACY_ALL_COUNTRIES_CODE = "OTHER";
+
+export function isAllCountriesCode(value: unknown): boolean {
+  const country = String(value ?? "").trim().toUpperCase();
+  return country === ALL_COUNTRIES_CODE || country === LEGACY_ALL_COUNTRIES_CODE;
+}
+
 export type WidgetStyleId =
   | "eco_delivery"
   | "urgent_pulse"
@@ -179,8 +187,9 @@ function boundedRecords(value: unknown, max: number): Record<string, unknown>[] 
 
 export function normalizeCountry(value: unknown): string {
   const country = String(value ?? "").trim().toUpperCase();
-  if (country === "OTHER" || /^[A-Z]{2}$/.test(country)) return country;
-  return "OTHER";
+  if (isAllCountriesCode(country)) return ALL_COUNTRIES_CODE;
+  if (/^[A-Z]{2}$/.test(country)) return country;
+  return ALL_COUNTRIES_CODE;
 }
 
 export function normalizeTags(value: unknown): string[] {
@@ -210,7 +219,7 @@ export function normalizeCountries(value: unknown): string[] {
     new Set(
       countries
         .map((country) => normalizeCountry(country))
-        .filter((country) => country !== "OTHER"),
+        .filter((country) => !isAllCountriesCode(country)),
     ),
   );
 }
@@ -234,6 +243,30 @@ export function normalizeProductIds(value: unknown): string[] {
     new Set(
       productIds
         .map(normalizeProductId)
+        .filter(Boolean),
+    ),
+  );
+}
+
+export function normalizeCollectionId(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const gidPrefix = "gid://shopify/Collection/";
+  if (raw.startsWith(gidPrefix)) return raw.slice(gidPrefix.length);
+  return raw.replace(/^\/+|\/+$/g, "");
+}
+
+export function normalizeCollectionIds(value: unknown): string[] {
+  const collectionIds = Array.isArray(value)
+    ? value
+    : String(value ?? "")
+        .split(",")
+        .map((collectionId) => collectionId.trim());
+
+  return Array.from(
+    new Set(
+      collectionIds
+        .map(normalizeCollectionId)
         .filter(Boolean),
     ),
   );
@@ -509,21 +542,35 @@ export function selectDeliveryRule<T extends DeliveryRule>(
   countryCode: string,
   productTags: string[],
   productId?: string,
+  productCollectionIds: string[] = [],
 ): T | undefined {
   const normalizedCountry = normalizeCountry(countryCode);
   const normalizedTags = normalizeTags(productTags);
   const normalizedProductId = normalizeProductId(productId);
+  const normalizedCollectionIds = normalizeCollectionIds(productCollectionIds);
+  const exactCountryRank = 0;
+  const targetCountryBaseRank = 1;
+  const allCountriesRank = 100_000;
+  const noCountryMatchRank = 100_001;
 
   const countryRank = (rule: DeliveryRule) => {
     const ruleCountry = normalizeCountry(rule.countryCode);
-    if (ruleCountry === normalizedCountry) return 0;
-    if (ruleCountry === "OTHER") return 1;
-    return 2;
+    if (ruleCountry === normalizedCountry) return exactCountryRank;
+
+    const targetCountries = normalizeCountries(jsonStringArray(rule.targetCountries));
+    if (targetCountries.length > 0) {
+      return targetCountries.includes(normalizedCountry)
+        ? targetCountryBaseRank + targetCountries.length
+        : noCountryMatchRank;
+    }
+
+    if (isAllCountriesCode(ruleCountry)) return allCountriesRank;
+    return noCountryMatchRank;
   };
 
   const candidates = rules
     .filter((rule) => rule.isActive)
-    .filter((rule) => countryRank(rule) < 2)
+    .filter((rule) => countryRank(rule) < noCountryMatchRank)
     .sort((a, b) => countryRank(a) - countryRank(b));
 
   if (normalizedProductId) {
@@ -531,6 +578,14 @@ export function selectDeliveryRule<T extends DeliveryRule>(
       normalizeProductIds(jsonStringArray(rule.targetProducts)).includes(normalizedProductId),
     );
     if (productMatch) return productMatch;
+  }
+
+  if (normalizedCollectionIds.length > 0) {
+    const collectionMatch = candidates.find((rule) => {
+      const targets = normalizeCollectionIds(jsonStringArray(rule.targetCollections));
+      return targets.length > 0 && targets.some((collectionId) => normalizedCollectionIds.includes(collectionId));
+    });
+    if (collectionMatch) return collectionMatch;
   }
 
   const tagMatch = candidates.find((rule) => {
@@ -541,8 +596,9 @@ export function selectDeliveryRule<T extends DeliveryRule>(
 
   const genericCountryMatch = candidates.find((rule) => {
     return (
-      countryRank(rule) === 0 &&
+      countryRank(rule) < allCountriesRank &&
       jsonStringArray(rule.targetProducts).length === 0 &&
+      jsonStringArray(rule.targetCollections).length === 0 &&
       jsonStringArray(rule.targetTags).length === 0
     );
   });
@@ -550,8 +606,9 @@ export function selectDeliveryRule<T extends DeliveryRule>(
 
   return candidates.find((rule) => {
     return (
-      countryRank(rule) === 1 &&
+      countryRank(rule) === allCountriesRank &&
       jsonStringArray(rule.targetProducts).length === 0 &&
+      jsonStringArray(rule.targetCollections).length === 0 &&
       jsonStringArray(rule.targetTags).length === 0
     );
   });

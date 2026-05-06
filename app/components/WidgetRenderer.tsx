@@ -201,7 +201,7 @@ const LordiconLayer = ({
 
   if (!src) return <>{children}</>;
 
-  const primary = String(settings?.lordiconPrimaryColor || color || "#3b82f6");
+  const primary = String(settings?.lordiconPrimaryColor || color || "#111827");
   const secondary = String(settings?.lordiconSecondaryColor || primary);
   const trigger = safeLordiconTrigger(settings?.lordiconTrigger);
   const stroke = safeLordiconStroke(settings?.lordiconStroke);
@@ -344,7 +344,10 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
 
   const render_header = (s: any) => {
     const isBannerType = s.styleType === 'title_banner';
-    const isHorizontal = s.iconPosition === 'left' || s.iconPosition === 'right';
+    const iconPosition = ['top', 'bottom', 'left', 'right'].includes(s.iconPosition)
+      ? s.iconPosition
+      : 'top';
+    const isHorizontal = iconPosition === 'left' || iconPosition === 'right';
 
     return (
       <div key={s.id} className={`bp-header ${isBannerType ? 'bp-header-banner' : ''}`} style={{
@@ -358,7 +361,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
         gap: s.gap !== undefined ? `${s.gap}px` : undefined,
         '--bp-size': `${s.iconSize || 24}px`
       } as any}>
-        {(s.iconPosition === 'top' || s.iconPosition === 'left') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
+        {(iconPosition === 'top' || iconPosition === 'left') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
         <div style={{ display: 'flex', flexDirection: 'column', gap: s.textGap !== undefined ? `${s.textGap}px` : '2px', textAlign: s.align || 'center' }}>
            <div className="bp-text-label" style={{
              color: s.textColor || undefined,
@@ -367,7 +370,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
            }}>{formatText(s.text)}</div>
            {s.subText && <div className="bp-text-sub" style={{ color: s.subTextColor || undefined, fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(s.subText)}</div>}
         </div>
-        {(s.iconPosition === 'bottom' || s.iconPosition === 'right') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
+        {(iconPosition === 'bottom' || iconPosition === 'right') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
       </div>
     );
   };

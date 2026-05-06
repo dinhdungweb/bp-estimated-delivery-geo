@@ -10,7 +10,6 @@ import {
   ChevronRightIcon,
   CheckCircleIcon,
   ChevronDownIcon,
-  SettingsIcon,
   CircleChevronRightIcon,
   PlusIcon,
   LayoutColumns2Icon,
@@ -234,7 +233,7 @@ export default function DashboardHome() {
       id: 1,
       title: "Activate app",
       desc: "Turn on the main switch to allow the widget to appear on your store.",
-      buttonText: "Go to Settings",
+      buttonText: "Open settings",
       action: () => navigate("/app/settings"),
       completed: isEnabled
     },
@@ -283,14 +282,7 @@ export default function DashboardHome() {
            <div className="flex flex-wrap items-center gap-3">
               <button 
                 type="button"
-                onClick={() => navigate("/app/settings")}
-                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-900 shadow-sm transition-all hover:border-gray-900"
-              >
-                <div className="w-4 h-4 text-gray-500"><Icon source={SettingsIcon} /></div> Settings
-              </button>
-              <button 
-                type="button"
-                onClick={() => navigate("/app/rules")}
+                onClick={() => navigate("/app/rules/new")}
                 className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black"
               >
                 <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div> New Rule
@@ -321,7 +313,7 @@ export default function DashboardHome() {
                        </div>
                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                           <div 
-                             className="h-full bg-blue-600 transition-all duration-1000" 
+                             className="h-full bg-gray-900 transition-all duration-1000"
                              style={{ width: `${(completedCount / steps.length) * 100}%` }}
                           />
                        </div>
@@ -334,7 +326,7 @@ export default function DashboardHome() {
                {steps.map((step) => {
                  const isExpanded = expandedStep === step.id;
                  return (
-                   <div key={step.id} className={`transition-all ${isExpanded ? 'bg-blue-50/30' : 'bg-white'}`}>
+                   <div key={step.id} className={`transition-all ${isExpanded ? 'bg-gray-50' : 'bg-white'}`}>
                      <button
                        type="button"
                        className="group flex w-full cursor-pointer items-center gap-4 p-5 text-left hover:bg-gray-50"
@@ -373,10 +365,10 @@ export default function DashboardHome() {
                                </p>
                              )}
                              {step.instructions && (
-                               <div className="space-y-2 p-4 bg-white border border-blue-50 rounded-xl shadow-sm">
+                               <div className="space-y-2 p-4 bg-white border border-gray-100 rounded-xl shadow-sm">
                                  {step.instructions.map((inst, i) => (
                                    <div key={i} className="flex gap-3 items-start">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 mt-1.5 shrink-0" />
                                       <p className="text-xs text-gray-600">{inst}</p>
                                    </div>
                                  ))}
@@ -403,7 +395,7 @@ export default function DashboardHome() {
                                  <button
                                    type="button"
                                    onClick={() => step.action()}
-                                   className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-bold text-white shadow-md shadow-blue-50 transition-all hover:bg-blue-700"
+                                   className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md shadow-gray-200 transition-all hover:bg-black"
                                  >
                                    {step.buttonText}
                                    <span className="h-3.5 w-3.5"><Icon source={ChevronRightIcon} /></span>
@@ -441,7 +433,7 @@ export default function DashboardHome() {
 
              <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4 flex flex-col">
                 <div className="flex items-center justify-between">
-                   <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                   <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-700">
                       <div className="w-6 h-6"><Icon source={CalendarIcon} /></div>
                    </div>
                     <Badge tone="info">Theme block</Badge>
@@ -461,7 +453,7 @@ export default function DashboardHome() {
 
              <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4 flex flex-col">
                 <div className="flex items-center justify-between">
-                   <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
+                   <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-700">
                       <div className="w-6 h-6"><Icon source={LayoutColumns2Icon} /></div>
                    </div>
                    <Badge tone="info">{`${totalRules} Rules`}</Badge>

@@ -247,7 +247,8 @@
 
   function normalizeCountry(value) {
     var country = text(value).trim().toUpperCase();
-    if (country === "OTHER" || /^[A-Z]{2}$/.test(country)) return country;
+    if (country === "ALL" || country === "OTHER") return "ALL";
+    if (/^[A-Z]{2}$/.test(country)) return country;
     return "";
   }
 
@@ -308,7 +309,7 @@
       ["FR", "France (EUR)"],
       ["DE", "Germany (EUR)"],
       ["SG", "Singapore (SGD)"],
-      ["OTHER", "Other Location"]
+      ["ALL", "All countries"]
     ].forEach(function (item) {
       var optionNode = document.createElement("option");
       optionNode.value = item[0];
@@ -387,8 +388,9 @@
       productPriceCents: container.getAttribute("data-product-price-cents") || "",
       currencyCode: container.getAttribute("data-currency-code") || "",
       productTags: container.getAttribute("data-product-tags") || "",
+      productCollections: container.getAttribute("data-product-collections") || "",
       widgetId: config.widgetId || "",
-      countryCode: normalizeCountry(config.countryCode) || savedCountry() || "OTHER"
+      countryCode: normalizeCountry(config.countryCode) || savedCountry() || "ALL"
     };
   }
 
@@ -410,7 +412,7 @@
       currencyCode: text(context.currencyCode),
       productTags: tagsArray(context.productTags),
       widgetId: text(context.widgetId),
-      countryCode: context.countryCode || "OTHER"
+      countryCode: context.countryCode || "ALL"
     });
 
     fetch("/apps/bp-delivery/track?" + params.toString(), {
@@ -1308,10 +1310,12 @@
 
   function runWidgetFlow(shop, productId, productTags, content, skeleton) {
     var country = savedCountry();
+    var productCollections = content.getAttribute("data-product-collections") || "";
     var params = new URLSearchParams({
       shop: text(shop),
       product_id: text(productId),
-      tags: text(productTags)
+      tags: text(productTags),
+      collections: text(productCollections)
     });
     if (country) params.set("country", country);
 

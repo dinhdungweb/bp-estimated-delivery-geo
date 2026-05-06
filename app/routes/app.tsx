@@ -31,13 +31,27 @@ export default function App() {
 
   return (
     <PolarisAppProvider i18n={polarisTranslations}>
+      <style>
+        {`
+          .Polaris-Button--variantPrimary {
+            background: #111827 !important;
+            color: #ffffff !important;
+            box-shadow: 0 1px 3px rgba(17, 24, 39, 0.16) !important;
+          }
+
+          .Polaris-Button--variantPrimary:hover,
+          .Polaris-Button--variantPrimary:active {
+            background: #000000 !important;
+          }
+        `}
+      </style>
       <AppProvider embedded apiKey={apiKey}>
         <s-app-nav>
           <s-link href="/app">Home</s-link>
           <s-link href="/app/analytics">Analytics</s-link>
-          <s-link href="/app/settings">Widget Settings</s-link>
           <s-link href="/app/rules">Delivery Rules</s-link>
           <s-link href="/app/templates">Templates</s-link>
+          <s-link href="/app/settings">Settings</s-link>
         </s-app-nav>
         <Outlet />
       </AppProvider>
