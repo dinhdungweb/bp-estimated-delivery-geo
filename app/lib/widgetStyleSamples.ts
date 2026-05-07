@@ -98,10 +98,11 @@ const sampleSoftBackground = (palette: TemplatePalette, index: number) =>
 
 export const sampleStepColors = (palette: TemplatePalette, index: number) => {
   const accent = sampleAccent(palette, index);
+  const dotAccent = palette.accent;
   return {
     bgColor: sampleSoftBackground(palette, index),
-    dotColor: accent,
-    iconColor: luminance(accent) < 0.45 ? "#ffffff" : palette.text,
+    dotColor: dotAccent,
+    iconColor: luminance(dotAccent) < 0.45 ? "#ffffff" : palette.text,
     labelColor: palette.text,
     subTextColor: palette.muted,
     borderColor: mixHex(palette.border, accent, 0.28),

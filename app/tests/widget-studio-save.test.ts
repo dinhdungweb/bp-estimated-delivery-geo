@@ -101,11 +101,13 @@ describe("saveWidgetStudio", () => {
     expect(created[0]).toMatchObject({
       name: "Flash Sale Timer",
       isDefault: false,
+      isReusable: true,
+      sourceWidgetId: "default-widget",
       shop: "test-shop.myshopify.com",
     });
   });
 
-  it("updates an existing source design without creating a duplicate", async () => {
+  it("does not update the source design when saving a rule design", async () => {
     const { created, db, updateMany, updates } = createDb();
 
     const result = await saveWidgetStudio({
@@ -121,16 +123,13 @@ describe("saveWidgetStudio", () => {
 
     expect(result).toMatchObject({
       success: true,
-      newId: "source-design",
-      updatedSourceDesign: true,
     });
     expect(created).toHaveLength(0);
     expect(updateMany).toHaveLength(1);
-    expect(updates).toHaveLength(1);
-    expect(updates[0]).toMatchObject({
-      where: { id: "source-design" },
-      data: { name: "Existing Saved Design", isDefault: false },
+    expect(updateMany[0]).toMatchObject({
+      where: { id: "default-widget", shop: "test-shop.myshopify.com" },
     });
+    expect(updates).toHaveLength(0);
   });
 
   it("returns an error and skips writes when the widget payload is invalid", async () => {

@@ -19,6 +19,8 @@ import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { widgetCopyData } from "../lib/widgetCopies.server";
+import { hydrateBlocksForTemplate } from "../lib/widgetStyleSamples";
 import {
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
@@ -35,6 +37,8 @@ import type {
 
 type ActionResult = {
   error?: string;
+  success?: boolean;
+  deletedDesignName?: string;
 };
 
 function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templateName: string) {
@@ -42,8 +46,10 @@ function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templa
     name: templateName || "Template Design",
     isDefault: false,
     isActive: true,
+    isReusable: false,
+    sourceWidgetId: null,
     widgetStyle: "custom",
-    customBlocks: template.customBlocks as unknown as Prisma.InputJsonValue,
+    customBlocks: hydrateBlocksForTemplate(template.customBlocks, template) as unknown as Prisma.InputJsonValue,
     textColor: template.textColor || "#000000",
     iconColor: template.iconColor || "#0033cc",
     bgColor: template.bgColor || "#ffffff",
@@ -73,7 +79,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const appSetting = await prisma.appSetting.findUnique({ where: { shop: session.shop } });
   const widgets = await prisma.widget.findMany({
-    where: { shop: session.shop, isDefault: false },
+    where: { shop: session.shop, isDefault: false, isReusable: true },
     orderBy: [{ updatedAt: "desc" }],
     select: {
       id: true,
@@ -107,12 +113,51 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       updatedAt: true,
     },
   });
+  const widgetIds = widgets.map((widget) => widget.id);
+  const usageCounts = new Map<string, number>();
+
+  if (widgetIds.length > 0) {
+    const [directRuleUsage, copiedRuleDesigns] = await Promise.all([
+      prisma.deliveryRule.groupBy({
+        by: ["widgetId"],
+        where: {
+          shop: session.shop,
+          widgetId: { in: widgetIds },
+        },
+        _count: { _all: true },
+      }),
+      prisma.widget.findMany({
+        where: {
+          shop: session.shop,
+          sourceWidgetId: { in: widgetIds },
+        },
+        select: {
+          sourceWidgetId: true,
+          _count: { select: { deliveryRules: true } },
+        },
+      }),
+    ]);
+
+    directRuleUsage.forEach((item) => {
+      if (!item.widgetId) return;
+      usageCounts.set(item.widgetId, (usageCounts.get(item.widgetId) || 0) + item._count._all);
+    });
+
+    copiedRuleDesigns.forEach((widget) => {
+      if (!widget.sourceWidgetId) return;
+      usageCounts.set(
+        widget.sourceWidgetId,
+        (usageCounts.get(widget.sourceWidgetId) || 0) + widget._count.deliveryRules,
+      );
+    });
+  }
 
   return routerData({
     showLocationSelector: appSetting?.showLocationSelector ?? true,
     widgets: widgets.map((widget) => ({
       ...widget,
       updatedAt: widget.updatedAt.toISOString(),
+      usedByRuleCount: usageCounts.get(widget.id) || 0,
     })),
   });
 };
@@ -132,6 +177,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         name: "New Design",
         isDefault: false,
         isActive: true,
+        isReusable: true,
+        sourceWidgetId: null,
         padding: 16,
         customBlocks: buildFallbackBlocks(
           {},
@@ -143,21 +190,73 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return redirect(`/app/widgets/${widget.id}`);
   }
 
-  if (intent === "saved-design") {
+  if (intent === "delete-design") {
     if (!widgetId) {
       return routerData({ error: "Invalid design" }, { status: 400 });
     }
 
     const sourceWidget = await prisma.widget.findFirst({
-      where: { id: widgetId, shop: session.shop, isDefault: false },
+      where: { id: widgetId, shop: session.shop, isDefault: false, isReusable: true },
     });
 
     if (!sourceWidget) {
       return routerData({ error: "Design not found" }, { status: 404 });
     }
 
+    const directRules = await prisma.deliveryRule.findMany({
+      where: { shop: session.shop, widgetId: sourceWidget.id },
+      select: { id: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      for (const rule of directRules) {
+        const ruleWidget = await tx.widget.create({
+          data: widgetCopyData(sourceWidget, {
+            shop: session.shop,
+            isReusable: false,
+            isActive: true,
+            sourceWidgetId: sourceWidget.id,
+          }),
+        });
+
+        await tx.deliveryRule.update({
+          where: { id: rule.id },
+          data: { widgetId: ruleWidget.id },
+        });
+      }
+
+      await tx.widget.delete({
+        where: { id: sourceWidget.id },
+      });
+    });
+
+    return routerData({ success: true, deletedDesignName: sourceWidget.name });
+  }
+
+  if (intent === "saved-design") {
+    if (!widgetId) {
+      return routerData({ error: "Invalid design" }, { status: 400 });
+    }
+
+    const sourceWidget = await prisma.widget.findFirst({
+      where: { id: widgetId, shop: session.shop, isDefault: false, isReusable: true },
+    });
+
+    if (!sourceWidget) {
+      return routerData({ error: "Design not found" }, { status: 404 });
+    }
+
+    const ruleWidget = await prisma.widget.create({
+      data: widgetCopyData(sourceWidget, {
+        shop: session.shop,
+        isReusable: false,
+        isActive: true,
+        sourceWidgetId: sourceWidget.id,
+      }),
+    });
+
     const params = new URLSearchParams({
-      selectedWidgetId: sourceWidget.id,
+      selectedWidgetId: ruleWidget.id,
       sourceDesignId: sourceWidget.id,
     });
     if (sourceWidget.name) params.set("designName", sourceWidget.name);
@@ -179,7 +278,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const params = new URLSearchParams({
     selectedWidgetId: widget.id,
-    sourceDesignId: widget.id,
+    templateApplied: "1",
     designName: widget.name,
   });
 
@@ -214,6 +313,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     category: "Animated",
     discount: "64% off",
     badgeTone: "blue",
+  },
+  {
+    name: "Countdown Priority",
+    description: "Timer, queue progress, steps, and trust badges.",
+    style: "animated_countdown_priority",
+    category: "Animated",
+    discount: "66% off",
+    badgeTone: "amber",
   },
   {
     name: "Urgent Pulse",
@@ -282,6 +389,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "green",
   },
   {
+    name: "Premium Pack",
+    description: "Premium packing promise with fulfillment details.",
+    style: "industry_premium_pack",
+    category: "Industry",
+    discount: "57% off",
+    badgeTone: "pink",
+  },
+  {
     name: "Compact Tracker",
     description: "Dense order process for product pages with less space.",
     style: "process_compact_tracker",
@@ -322,6 +437,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "cyan",
   },
   {
+    name: "Split Fulfillment",
+    description: "Warehouse and carrier timeline with progress.",
+    style: "process_split_fulfillment",
+    category: "Order process",
+    discount: "54% off",
+    badgeTone: "green",
+  },
+  {
     name: "Dark Luxury",
     description: "Premium dark delivery tracker for luxury stores.",
     style: "dark_luxury_tracker",
@@ -354,6 +477,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "red",
   },
   {
+    name: "Dark Command Route",
+    description: "High-contrast route command with live trust signals.",
+    style: "dark_command_route",
+    category: "Dark",
+    discount: "58% off",
+    badgeTone: "cyan",
+  },
+  {
     name: "Clean ETA",
     description: "Minimal light template for quiet storefronts.",
     style: "light_clean_eta",
@@ -383,6 +514,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     style: "blue_boxed_steps",
     category: "Light",
     discount: "57% off",
+    badgeTone: "blue",
+  },
+  {
+    name: "Concierge ETA",
+    description: "Polished promise card with delivery policy details.",
+    style: "light_concierge_eta",
+    category: "Light",
+    discount: "49% off",
     badgeTone: "blue",
   },
   {
@@ -418,6 +557,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "blue",
   },
   {
+    name: "Checkout Assurance",
+    description: "Shipping facts, badges, and policy context for checkout.",
+    style: "informative_checkout_assurance",
+    category: "Informative",
+    discount: "42% off",
+    badgeTone: "cyan",
+  },
+  {
     name: "Holiday Gift",
     description: "Seasonal delivery window for gift campaigns.",
     style: "seasonal_holiday_gift",
@@ -449,6 +596,14 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
     discount: "73% off",
     badgeTone: "green",
   },
+  {
+    name: "Sale Window",
+    description: "Seasonal countdown with promo and dispatch cues.",
+    style: "seasonal_sale_window",
+    category: "Seasonal",
+    discount: "71% off",
+    badgeTone: "red",
+  },
 ];
 
 function TemplateCard({
@@ -463,19 +618,23 @@ function TemplateCard({
   onUseTemplate: (template: TemplateMeta) => void;
 }) {
   const settings = TEMPLATE_DEFAULTS[template.style];
+  const previewSettings = {
+    ...settings,
+    customBlocks: hydrateBlocksForTemplate(settings.customBlocks, settings),
+  };
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="p-4">
         <div className="rounded-xl bg-gray-50 p-2">
-          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none", showLocationSelector }} />
+          <WidgetPreviewRenderer settings={{ ...previewSettings, shadow: "none", showLocationSelector }} />
         </div>
       </div>
 
       <div className="mt-auto border-t border-gray-100 p-4">
-        <div className="mb-3 min-h-[58px]">
+        <div className="mb-2 min-h-[48px]">
           <h3 className="text-sm font-bold text-gray-950">{template.name}</h3>
-          <p className="mt-1 text-xs leading-5 text-gray-500">{template.description}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-4 text-gray-500">{template.description}</p>
         </div>
         <button
           type="button"
@@ -526,13 +685,17 @@ function MyDesignCard({
   widget,
   showLocationSelector,
   isSubmitting,
+  isDeleting,
   onCustomize,
+  onDelete,
   onUseDesign,
 }: {
   widget: SavedWidget;
   showLocationSelector: boolean;
   isSubmitting: boolean;
+  isDeleting: boolean;
   onCustomize: (widgetId: string) => void;
+  onDelete: (widget: SavedWidget) => void;
   onUseDesign: (widget: SavedWidget) => void;
 }) {
   const settings = widgetPreviewSettings(widget);
@@ -540,6 +703,8 @@ function MyDesignCard({
     month: "short",
     day: "numeric",
   }).format(new Date(widget.updatedAt));
+  const usedByRuleCount = widget.usedByRuleCount || 0;
+  const usageLabel = usedByRuleCount === 1 ? "Used by 1 rule" : `Used by ${usedByRuleCount} rules`;
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
@@ -550,25 +715,20 @@ function MyDesignCard({
       </div>
 
       <div className="mt-auto border-t border-gray-100 p-4">
-        <div className="mb-3 min-h-[70px]">
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {widget.isDefault && (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-700">
-                Default
-              </span>
-            )}
+        <div className="mb-2 min-h-[48px]">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-gray-950">{widget.name}</h3>
             <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                widget.isActive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                usedByRuleCount > 0 ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"
               }`}
             >
-              {widget.isActive ? "Active" : "Disabled"}
+              {usedByRuleCount > 0 ? usageLabel : "Unused"}
             </span>
           </div>
-          <h3 className="text-sm font-bold text-gray-950">{widget.name}</h3>
-          <p className="mt-1 text-xs leading-5 text-gray-500">Updated {updatedAt}</p>
+          <p className="mt-1 text-xs leading-4 text-gray-500">Updated {updatedAt}</p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2">
           <button
             type="button"
             onClick={() => onUseDesign(widget)}
@@ -580,10 +740,49 @@ function MyDesignCard({
           <button
             type="button"
             onClick={() => onCustomize(widget.id)}
-            disabled={isSubmitting}
-            className="flex h-9 w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSubmitting || isDeleting}
+            aria-label={`Customize ${widget.name}`}
+            title="Customize"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Customize
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M9.7 3.05 12.95 6.3M2.67 13.33l3.02-.67 7.96-7.96a1.53 1.53 0 0 0-2.17-2.17L3.52 10.5l-.85 2.83Z"
+                stroke="currentColor"
+                strokeWidth="1.45"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(widget)}
+            disabled={isSubmitting || isDeleting}
+            aria-label={`Delete ${widget.name}`}
+            title="Delete design"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isDeleting ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="animate-spin">
+                <path
+                  d="M8 2.5a5.5 5.5 0 1 1-5.2 7.3"
+                  stroke="currentColor"
+                  strokeWidth="1.45"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M2.67 4.33h10.66M6.33 2.67h3.34M5.33 6.67v4.66M8 6.67v4.66M10.67 6.67v4.66M4 4.33l.48 8.17c.05.83.73 1.5 1.56 1.5h3.92c.83 0 1.51-.67 1.56-1.5L12 4.33"
+                  stroke="currentColor"
+                  strokeWidth="1.45"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </button>
         </div>
       </div>
@@ -658,8 +857,20 @@ export default function TemplateBuilder() {
     submit({ intent: "create-design" }, { method: "post" });
   };
 
+  const handleDeleteDesign = (widget: SavedWidget) => {
+    const usedByRuleCount = widget.usedByRuleCount || 0;
+    const message = usedByRuleCount > 0
+      ? `Delete "${widget.name}" from My Design? Existing rules that use copied versions of this design will continue working.`
+      : `Delete "${widget.name}" from My Design?`;
+    if (!confirm(message)) return;
+
+    setPendingStyle(null);
+    submit({ intent: "delete-design", widgetId: widget.id }, { method: "post" });
+  };
+
   const isSubmitting = navigation.state === "submitting";
   const isCreatingDesign = isSubmitting && navigation.formData?.get("intent") === "create-design";
+  const isDeletingDesign = isSubmitting && navigation.formData?.get("intent") === "delete-design";
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
@@ -690,6 +901,12 @@ export default function TemplateBuilder() {
         {designSaved && activeMainTab === "My design" && (
           <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 shadow-sm">
             Design saved to My design.
+          </div>
+        )}
+
+        {actionData?.success && actionData.deletedDesignName && (
+          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 shadow-sm">
+            {actionData.deletedDesignName} was removed from My Design.
           </div>
         )}
 
@@ -757,7 +974,9 @@ export default function TemplateBuilder() {
                 widget={widget}
                 showLocationSelector={showLocationSelector}
                 isSubmitting={isSubmitting && navigation.formData?.get("widgetId") === widget.id}
+                isDeleting={isDeletingDesign && navigation.formData?.get("widgetId") === widget.id}
                 onCustomize={(widgetId) => navigate(`/app/widgets/${widgetId}`)}
+                onDelete={handleDeleteDesign}
                 onUseDesign={handleUseSavedDesign}
               />
             ))}

@@ -59,7 +59,6 @@ import {
   samplePolicyItemColors,
   sampleStepColors,
   sampleTrustBadgeColors,
-  stripGeneratedStyleSamples,
 } from "../lib/widgetStyleSamples";
 import type { TemplatePalette } from "../lib/widgetStyleSamples";
 import { getAnimatedIconByIconId } from "../lib/lordiconPresets";
@@ -371,6 +370,8 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
         name: `New Widget (${templateId || 'General'})`,
         isActive: true,
         isDefault: false,
+        isReusable: true,
+        sourceWidgetId: null,
         widgetStyle: defaultData.style,
         customBlocks: defaultData.customBlocks?.length
           ? defaultData.customBlocks
@@ -431,10 +432,13 @@ export default function VisualBuilderStudio() {
   const sourceDesignId = editorSearchParams.get("sourceDesignId") || "";
   const designName = editorSearchParams.get("designName") || "";
   const designSavedFromUrl = editorSearchParams.get("designSaved") === "1";
+  const baseReturnTo = safeReturnTo(editorSearchParams.get("returnTo"));
   const returnTo = returnToWithSelectedWidget(
     editorSearchParams.get("returnTo"),
-    sourceDesignId || widget.id,
+    widget.id,
   );
+  const isRuleDesign = baseReturnTo.startsWith("/app/rules/") && !widget.isReusable;
+  const isSavingToDesign = isSaving && navigation.formData?.get("saveAction") === "library";
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
 
@@ -476,19 +480,16 @@ export default function VisualBuilderStudio() {
     }
 
     if (actionData?.success && actionData.savedAsDesign) {
-      if (shouldSaveAsDesign && actionData.newId) {
+      if (actionData.newId) {
         const params = new URLSearchParams(location.search);
         params.delete("saveAsDesign");
         params.set("sourceDesignId", actionData.newId);
-        if (designName) params.set("designName", designName);
+        params.set("designName", actionData.designName || designName || widget.name);
         params.set("designSaved", "1");
         navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+      } else {
+        showToast("Design saved to My design.");
       }
-      return;
-    }
-
-    if (actionData?.success && actionData.updatedSourceDesign) {
-      showToast("Design updated in My design.");
       return;
     }
 
@@ -500,7 +501,7 @@ export default function VisualBuilderStudio() {
     if (actionData?.success) {
       showToast("Widget saved.");
     }
-  }, [actionData, designName, location.pathname, location.search, navigate, shouldSaveAsDesign, showToast]);
+  }, [actionData, designName, location.pathname, location.search, navigate, showToast, widget.name]);
 
   // --- States ---
   const [name, setName] = useState(widget.name);
@@ -525,7 +526,7 @@ export default function VisualBuilderStudio() {
 
   const [blocks, setBlocks] = useState<any[]>(() =>
     parseBlockConfigs(widget.customBlocks).map((block) =>
-      block.id.startsWith("block-") ? block : stripGeneratedStyleSamples(block, templatePalette),
+      hydrateBlockStyleSamples(block, templatePalette),
     ),
   );
   const targetCountries = normalizeCountries(widget.targetCountries);
@@ -533,7 +534,7 @@ export default function VisualBuilderStudio() {
   const targetTags = normalizeTags(widget.targetTags);
   const [iconPickerTarget, setIconPickerTarget] = useState<{ blockId?: string; field?: string; open: boolean }>({ open: false });
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback((options: { saveAsDesign?: boolean } = {}) => {
     const formData = new FormData();
     formData.append("name", name);
     formData.append("isActive", String(isActive));
@@ -554,7 +555,8 @@ export default function VisualBuilderStudio() {
     formData.append("targetCountries", JSON.stringify(targetCountries));
     formData.append("targetProducts", JSON.stringify(targetProducts));
     formData.append("targetTags", JSON.stringify(targetTags));
-    formData.append("saveAsDesign", String(shouldSaveAsDesign));
+    formData.append("saveAction", options.saveAsDesign ? "library" : "studio");
+    formData.append("saveAsDesign", String(shouldSaveAsDesign || Boolean(options.saveAsDesign)));
     formData.append("sourceDesignId", sourceDesignId);
     formData.append("designName", designName);
     
@@ -1514,7 +1516,23 @@ export default function VisualBuilderStudio() {
                 />
               </InlineStack>
             </Box>
-            <Button variant="primary" icon={SaveIcon} onClick={() => handleSave()} loading={isSaving}>Save Studio</Button>
+            {isRuleDesign && (
+              <Button
+                icon={DuplicateIcon}
+                onClick={() => handleSave({ saveAsDesign: true })}
+                loading={isSavingToDesign}
+              >
+                Save to My Design
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              icon={SaveIcon}
+              onClick={() => handleSave()}
+              loading={isSaving && !isSavingToDesign}
+            >
+              Save Studio
+            </Button>
           </InlineStack>
         </InlineStack>
       </Box>

@@ -1,5 +1,12 @@
 import type { WidgetSettingsProps } from "../lib/delivery";
 
+const ANIMATED_ICON_SETTINGS = {
+  lordiconTrigger: "loop",
+  lordiconStroke: "regular",
+  lordiconSpeed: 1,
+  lordiconSize: 26,
+} as const;
+
 export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
   // -------------------------------------------------------------------------
   // ORIGINAL WORKING TEMPLATES (Cleaned & Fixed)
@@ -59,6 +66,7 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
         id: "s1",
         type: "steps",
         settings: {
+          ...ANIMATED_ICON_SETTINGS,
           preset: "timeline_dots",
           connectorStyle: "solid",
           borderRadius: 50,
@@ -66,13 +74,13 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           borderWidth: 2,
           step1Label: "Confirmed",
           step1SubText: "{order_date}",
-          step1Icon: "cart",
+          step1Icon: "animated:cart",
           step2Label: "Transit",
           step2SubText: "{ship_date}",
-          step2Icon: "truck",
+          step2Icon: "animated:delivery-truck",
           step3Label: "Arrived",
           step3SubText: "{max_date}",
-          step3Icon: "map_pin"
+          step3Icon: "animated:location-pin"
         }
       }
     ]
@@ -256,16 +264,46 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
         settings: {
           preset: "boxed_cards",
           itemGap: 12,
+          borderRadius: 12,
           borderWidth: 1,
-          step1Label: "Confirmed",
-          step1SubText: "{order_date}",
-          step1Icon: "check_badge",
-          step2Label: "Transit",
-          step2SubText: "{ship_date}",
-          step2Icon: "truck",
-          step3Label: "Delivery",
-          step3SubText: "{max_date}",
-          step3Icon: "shield"
+          items: [
+            {
+              id: "confirmed",
+              label: "Confirmed",
+              subText: "{order_date}",
+              icon: "check_badge",
+              bgColor: "rgba(14,165,233,0.12)",
+              dotColor: "#0ea5e9",
+              iconColor: "#ffffff",
+              labelColor: "#f8fafc",
+              subTextColor: "#94a3b8",
+              borderColor: "#38bdf8"
+            },
+            {
+              id: "transit",
+              label: "Transit",
+              subText: "{ship_date}",
+              icon: "truck",
+              bgColor: "rgba(15,23,42,0.72)",
+              dotColor: "#0ea5e9",
+              iconColor: "#ffffff",
+              labelColor: "#f8fafc",
+              subTextColor: "#94a3b8",
+              borderColor: "#475569"
+            },
+            {
+              id: "delivery",
+              label: "Delivery",
+              subText: "{max_date}",
+              icon: "shield",
+              bgColor: "rgba(15,23,42,0.72)",
+              dotColor: "#0ea5e9",
+              iconColor: "#ffffff",
+              labelColor: "#f8fafc",
+              subTextColor: "#94a3b8",
+              borderColor: "#475569"
+            }
+          ]
         }
       }
     ]
@@ -700,6 +738,7 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
         id: "s1",
         type: "steps",
         settings: {
+          ...ANIMATED_ICON_SETTINGS,
           preset: "timeline_dots",
           connectorStyle: "dashed",
           borderRadius: 50,
@@ -707,13 +746,13 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           borderWidth: 2,
           step1Label: "Order On",
           step1SubText: "{order_date}",
-          step1Icon: "heart",
+          step1Icon: "animated:care-promise",
           step2Label: "Production",
           step2SubText: "{ship_date}",
-          step2Icon: "truck",
+          step2Icon: "animated:delivery-truck",
           step3Label: "Delivered",
           step3SubText: "{max_date}",
-          step3Icon: "map_pin"
+          step3Icon: "animated:location-pin"
         }
       }
     ]
@@ -836,16 +875,17 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           connectorStyle: "solid",
           borderRadius: 50,
           itemGap: 16,
+          iconSize: 26,
           borderWidth: 2,
           step1Label: "Ordered",
           step1SubText: "{order_date}",
-          step1Icon: "cart",
+          step1Icon: "animated:cart",
           step2Label: "",
           step2SubText: "",
-          step2Icon: "box",
+          step2Icon: "animated:package-box",
           step3Label: "",
           step3SubText: "",
-          step3Icon: "truck"
+          step3Icon: "animated:delivery-truck"
         }
       }
     ]
@@ -899,20 +939,21 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
         id: "afs-steps",
         type: "steps",
         settings: {
+          ...ANIMATED_ICON_SETTINGS,
           preset: "timeline_dots",
           connectorStyle: "solid",
           itemGap: 12,
-          iconSize: 18,
+          iconSize: 26,
           borderWidth: 2,
           step1Label: "Order today",
           step1SubText: "{order_date}",
-          step1Icon: "clock",
+          step1Icon: "animated:cutoff-timer",
           step2Label: "Priority pack",
           step2SubText: "{ship_date}",
-          step2Icon: "rocket",
+          step2Icon: "animated:express-dispatch",
           step3Label: "Delivered",
           step3SubText: "{max_date}",
-          step3Icon: "map_pin"
+          step3Icon: "animated:location-pin"
         }
       }
     ]
@@ -932,13 +973,15 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
         id: "asp-head",
         type: "header",
         settings: {
+          ...ANIMATED_ICON_SETTINGS,
           text: "Live delivery estimate",
           subText: "{min_date} - {max_date}",
           align: "center",
           fontSize: "lg",
-          icon: "truck",
+          icon: "animated:delivery-truck",
           iconPosition: "top",
           iconSize: 28,
+          lordiconSize: 28,
           padding: 8
         }
       },
@@ -955,19 +998,20 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
         id: "asp-steps",
         type: "steps",
         settings: {
+          ...ANIMATED_ICON_SETTINGS,
           preset: "split_segments",
           itemGap: 8,
           borderRadius: 10,
           borderWidth: 1,
           step1Label: "Order",
           step1SubText: "{order_date}",
-          step1Icon: "cart",
+          step1Icon: "animated:cart",
           step2Label: "Ship",
           step2SubText: "{ship_date}",
-          step2Icon: "truck",
+          step2Icon: "animated:delivery-truck",
           step3Label: "Arrive",
           step3SubText: "{max_date}",
-          step3Icon: "check_badge"
+          step3Icon: "animated:protected"
         }
       }
     ]
@@ -1212,7 +1256,7 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           subText: "Live estimate: {min_date} - {max_date}",
           align: "left",
           fontSize: "lg",
-          padding: 6
+          padding: 16
         }
       },
       {
@@ -1349,7 +1393,7 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           subText: "{min_date} - {max_date}",
           align: "left",
           fontSize: "sm",
-          padding: 4
+          padding: 16
         }
       },
       {
@@ -1476,7 +1520,7 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           subText: "Transparent dates before checkout",
           align: "left",
           fontSize: "lg",
-          padding: 4
+          padding: 16
         }
       },
       {
@@ -1608,6 +1652,671 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           step3Label: "Delivered",
           step3SubText: "{max_date}",
           step3Icon: "scooter"
+        }
+      }
+    ]
+  },
+
+  animated_countdown_priority: {
+    style: "custom",
+    textColor: "#3b1806",
+    iconColor: "#f97316",
+    bgColor: "#fff7ed",
+    borderColor: "#fed7aa",
+    borderRadius: 18,
+    padding: 16,
+    shadow: "md",
+    bgGradient: "linear-gradient(135deg, #fff7ed 0%, #ffffff 48%, #ffedd5 100%)",
+    customBlocks: [
+      {
+        id: "acp-timer",
+        type: "timer",
+        settings: {
+          text: "Priority window closes in {countdown}",
+          bgColor: "#ffedd5",
+          textColor: "#7c2d12",
+          color: "#f97316",
+          borderRadius: 14,
+          padding: 10,
+          fontWeight: "700"
+        }
+      },
+      {
+        id: "acp-progress",
+        type: "progress",
+        settings: {
+          label: "Dispatch queue",
+          percentage: 82,
+          color: "#f97316",
+          gradientEndColor: "#facc15",
+          trackColor: "#fed7aa",
+          height: 8,
+          radius: 999
+        }
+      },
+      {
+        id: "acp-steps",
+        type: "steps",
+        settings: {
+          ...ANIMATED_ICON_SETTINGS,
+          preset: "split_segments",
+          itemGap: 8,
+          borderRadius: 12,
+          borderWidth: 1,
+          iconSize: 26,
+          items: [
+            {
+              id: "locked",
+              label: "Locked",
+              subText: "{order_date}",
+              icon: "animated:cutoff-timer",
+              bgColor: "#ffedd5",
+              dotColor: "#f97316",
+              iconColor: "#ffffff",
+              labelColor: "#7c2d12",
+              subTextColor: "#9a3412",
+              borderColor: "#fdba74"
+            },
+            {
+              id: "packed",
+              label: "Packed",
+              subText: "{ship_date}",
+              icon: "animated:package-box",
+              bgColor: "#fef3c7",
+              dotColor: "#f97316",
+              iconColor: "#ffffff",
+              labelColor: "#78350f",
+              subTextColor: "#92400e",
+              borderColor: "#fcd34d"
+            },
+            {
+              id: "arrives",
+              label: "Arrives",
+              subText: "{max_date}",
+              icon: "animated:delivery-truck",
+              bgColor: "#ecfeff",
+              dotColor: "#f97316",
+              iconColor: "#ffffff",
+              labelColor: "#164e63",
+              subTextColor: "#0e7490",
+              borderColor: "#67e8f9"
+            }
+          ]
+        }
+      },
+      {
+        id: "acp-trust",
+        type: "trust_badges",
+        settings: {
+          ...ANIMATED_ICON_SETTINGS,
+          rowGap: 8,
+          itemPadding: 8,
+          itemRadius: 999,
+          iconSize: 26,
+          badges: [
+            {
+              id: "eta",
+              icon: "animated:protected",
+              label: "ETA locked",
+              subText: "",
+              bgColor: "#fff7ed",
+              borderColor: "#fed7aa",
+              iconColor: "#f97316",
+              labelColor: "#7c2d12"
+            },
+            {
+              id: "track",
+              icon: "animated:protected",
+              label: "Tracked",
+              subText: "",
+              bgColor: "#ecfeff",
+              borderColor: "#a5f3fc",
+              iconColor: "#0891b2",
+              labelColor: "#164e63"
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  industry_premium_pack: {
+    style: "custom",
+    textColor: "#2e1065",
+    iconColor: "#9333ea",
+    bgColor: "#faf5ff",
+    borderColor: "#e9d5ff",
+    borderRadius: 18,
+    padding: 16,
+    bgGradient: "linear-gradient(135deg, #faf5ff 0%, #ffffff 52%, #fdf2f8 100%)",
+    customBlocks: [
+      {
+        id: "ipp-promise",
+        type: "promise_card",
+        settings: {
+          title: "Premium packing included",
+          subtitle: "Prepared by {ship_date} and delivered by {max_date}",
+          icon: "sparkles",
+          tone: "premium",
+          bgColor: "#f3e8ff",
+          borderColor: "#d8b4fe",
+          iconBgColor: "#9333ea",
+          iconColor: "#ffffff",
+          titleColor: "#2e1065",
+          subtitleColor: "#6b21a8",
+          badgeText: "Care pack",
+          badgeBgColor: "#ffffff",
+          badgeTextColor: "#7e22ce",
+          borderWidth: 1,
+          borderRadius: 16
+        }
+      },
+      {
+        id: "ipp-dual",
+        type: "dual_info",
+        settings: {
+          leftTitle: "Packing team",
+          leftText: "Quality check on {order_date}",
+          leftIcon: "warehouse",
+          leftBgColor: "#fdf4ff",
+          leftBorderColor: "#f0abfc",
+          leftIconColor: "#c026d3",
+          rightTitle: "Carrier handoff",
+          rightText: "Booked for {ship_date}",
+          rightIcon: "truck",
+          rightBgColor: "#eff6ff",
+          rightBorderColor: "#bfdbfe",
+          rightIconColor: "#2563eb",
+          borderWidth: 1,
+          cardRadius: 14,
+          cardPadding: 12
+        }
+      },
+      {
+        id: "ipp-steps",
+        type: "steps",
+        settings: {
+          preset: "timeline_dots",
+          connectorStyle: "solid",
+          itemGap: 12,
+          iconSize: 18,
+          borderWidth: 2,
+          step1Label: "Selected",
+          step1SubText: "{order_date}",
+          step1Icon: "cart",
+          step2Label: "Protected",
+          step2SubText: "{ship_date}",
+          step2Icon: "shield",
+          step3Label: "Delivered",
+          step3SubText: "{max_date}",
+          step3Icon: "home"
+        }
+      }
+    ]
+  },
+
+  process_split_fulfillment: {
+    style: "custom",
+    textColor: "#111827",
+    iconColor: "#0f766e",
+    bgColor: "#ffffff",
+    borderColor: "#ccfbf1",
+    borderRadius: 14,
+    padding: 16,
+    customBlocks: [
+      {
+        id: "psf-head",
+        type: "header",
+        settings: {
+          text: "Fulfillment timeline",
+          subText: "Clear warehouse and carrier milestones",
+          align: "left",
+          fontSize: "lg",
+          icon: "route",
+          iconPosition: "left",
+          padding: 6
+        }
+      },
+      {
+        id: "psf-dual",
+        type: "dual_info",
+        settings: {
+          leftTitle: "Warehouse",
+          leftText: "Ready to ship on {ship_date}",
+          leftIcon: "warehouse",
+          rightTitle: "Carrier",
+          rightText: "Delivery estimate {min_date} - {max_date}",
+          rightIcon: "truck",
+          borderWidth: 1,
+          cardRadius: 12,
+          cardPadding: 12
+        }
+      },
+      {
+        id: "psf-progress",
+        type: "progress",
+        settings: {
+          label: "Fulfillment confidence",
+          percentage: 68,
+          color: "#0f766e",
+          gradientEndColor: "#2563eb",
+          height: 7,
+          radius: 999
+        }
+      },
+      {
+        id: "psf-steps",
+        type: "steps",
+        settings: {
+          preset: "thick",
+          itemGap: 8,
+          borderRadius: 12,
+          borderWidth: 1,
+          step1Bg: "#ecfdf5",
+          step2Bg: "#eff6ff",
+          step3Bg: "#f8fafc",
+          step1Label: "Order",
+          step1SubText: "{order_date}",
+          step1Icon: "cart",
+          step2Label: "Dispatch",
+          step2SubText: "{ship_date}",
+          step2Icon: "package",
+          step3Label: "Arrival",
+          step3SubText: "{max_date}",
+          step3Icon: "map_pin"
+        }
+      }
+    ]
+  },
+
+  dark_command_route: {
+    style: "custom",
+    textColor: "#e2e8f0",
+    iconColor: "#38bdf8",
+    bgColor: "#020617",
+    borderColor: "#1e293b",
+    borderRadius: 18,
+    padding: 16,
+    shadow: "premium",
+    bgGradient: "linear-gradient(135deg, #020617 0%, #0f172a 52%, #111827 100%)",
+    customBlocks: [
+      {
+        id: "dcr-banner",
+        type: "banner",
+        settings: {
+          text: "Route command active for {COUNTRY_NAME}",
+          icon: "route",
+          bgColor: "rgba(56,189,248,0.14)",
+          borderColor: "rgba(56,189,248,0.36)",
+          textColor: "#e0f2fe",
+          iconColor: "#38bdf8",
+          borderRadius: 14,
+          borderWidth: 1,
+          padding: 10,
+          fontWeight: "700"
+        }
+      },
+      {
+        id: "dcr-progress",
+        type: "progress",
+        settings: {
+          label: "Carrier sync",
+          percentage: 76,
+          labelColor: "#e2e8f0",
+          trackColor: "#1e293b",
+          color: "#38bdf8",
+          gradientEndColor: "#a78bfa",
+          height: 8,
+          radius: 999
+        }
+      },
+      {
+        id: "dcr-steps",
+        type: "steps",
+        settings: {
+          preset: "boxed_cards",
+          itemGap: 10,
+          borderRadius: 14,
+          borderWidth: 1,
+          iconSize: 20,
+          items: [
+            {
+              id: "scan",
+              label: "Scan",
+              subText: "{order_date}",
+              icon: "monitor",
+              bgColor: "rgba(14,165,233,0.12)",
+              dotColor: "#38bdf8",
+              iconColor: "#020617",
+              labelColor: "#f8fafc",
+              subTextColor: "#94a3b8",
+              borderColor: "#0ea5e9"
+            },
+            {
+              id: "route",
+              label: "Route",
+              subText: "{ship_date}",
+              icon: "rocket",
+              bgColor: "rgba(30,41,59,0.82)",
+              dotColor: "#38bdf8",
+              iconColor: "#020617",
+              labelColor: "#f8fafc",
+              subTextColor: "#94a3b8",
+              borderColor: "#334155"
+            },
+            {
+              id: "drop",
+              label: "Drop",
+              subText: "{max_date}",
+              icon: "map_pin",
+              bgColor: "rgba(30,41,59,0.82)",
+              dotColor: "#38bdf8",
+              iconColor: "#020617",
+              labelColor: "#f8fafc",
+              subTextColor: "#94a3b8",
+              borderColor: "#334155"
+            }
+          ]
+        }
+      },
+      {
+        id: "dcr-trust",
+        type: "trust_badges",
+        settings: {
+          rowGap: 8,
+          itemPadding: 8,
+          itemRadius: 999,
+          iconSize: 15,
+          badges: [
+            {
+              id: "secure",
+              icon: "shield",
+              label: "Secure",
+              subText: "",
+              bgColor: "rgba(15,23,42,0.9)",
+              borderColor: "#334155",
+              iconColor: "#38bdf8",
+              labelColor: "#e2e8f0"
+            },
+            {
+              id: "live",
+              icon: "check_badge",
+              label: "Live ETA",
+              subText: "",
+              bgColor: "rgba(15,23,42,0.9)",
+              borderColor: "#334155",
+              iconColor: "#a78bfa",
+              labelColor: "#e2e8f0"
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  light_concierge_eta: {
+    style: "custom",
+    textColor: "#111827",
+    iconColor: "#2563eb",
+    bgColor: "#ffffff",
+    borderColor: "#e5e7eb",
+    borderRadius: 16,
+    padding: 16,
+    shadow: "sm",
+    customBlocks: [
+      {
+        id: "lce2-promise",
+        type: "promise_card",
+        settings: {
+          title: "Concierge delivery estimate",
+          subtitle: "Expected between {min_date} and {max_date}",
+          icon: "sparkles",
+          tone: "info",
+          bgColor: "#eff6ff",
+          borderColor: "#bfdbfe",
+          iconBgColor: "#2563eb",
+          iconColor: "#ffffff",
+          titleColor: "#172554",
+          subtitleColor: "#475569",
+          badgeText: "Clear ETA",
+          badgeBgColor: "#ffffff",
+          badgeTextColor: "#1d4ed8",
+          borderWidth: 1,
+          borderRadius: 16
+        }
+      },
+      {
+        id: "lce2-divider",
+        type: "divider",
+        settings: {
+          height: 1,
+          color: "#e5e7eb"
+        }
+      },
+      {
+        id: "lce2-policy",
+        type: "policy_accordion",
+        settings: {
+          openFirst: true,
+          borderWidth: 1,
+          itemRadius: 12,
+          itemPadding: 10,
+          itemGap: 8,
+          items: [
+            {
+              id: "dispatch",
+              title: "Dispatch promise",
+              body: "Orders are prepared by {ship_date} before carrier handoff.",
+              icon: "package",
+              bgColor: "#f8fafc",
+              borderColor: "#e2e8f0",
+              iconColor: "#2563eb",
+              titleColor: "#111827",
+              bodyColor: "#64748b"
+            },
+            {
+              id: "coverage",
+              title: "Delivery coverage",
+              body: "This estimate is localized for {COUNTRY_NAME}.",
+              icon: "map_pin",
+              bgColor: "#f0fdfa",
+              borderColor: "#ccfbf1",
+              iconColor: "#0f766e",
+              titleColor: "#111827",
+              bodyColor: "#64748b"
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  informative_checkout_assurance: {
+    style: "custom",
+    textColor: "#0f172a",
+    iconColor: "#0891b2",
+    bgColor: "#f8fafc",
+    borderColor: "#cbd5e1",
+    borderRadius: 16,
+    padding: 16,
+    customBlocks: [
+      {
+        id: "ica-head",
+        type: "header",
+        settings: {
+          text: "Checkout delivery assurance",
+          subText: "All key delivery facts in one compact block",
+          align: "left",
+          fontSize: "lg",
+          icon: "shield",
+          iconPosition: "left",
+          padding: 6
+        }
+      },
+      {
+        id: "ica-banner",
+        type: "banner",
+        settings: {
+          text: "Ships by {ship_date}. Delivered {min_date} - {max_date}.",
+          type: "info",
+          icon: "calendar",
+          bgColor: "#ecfeff",
+          borderColor: "#a5f3fc",
+          textColor: "#164e63",
+          iconColor: "#0891b2",
+          borderWidth: 1,
+          borderRadius: 12
+        }
+      },
+      {
+        id: "ica-trust",
+        type: "trust_badges",
+        settings: {
+          rowGap: 8,
+          itemPadding: 9,
+          itemRadius: 12,
+          iconSize: 18,
+          badges: [
+            {
+              id: "tracked",
+              icon: "truck",
+              label: "Tracked",
+              subText: "Updates included",
+              bgColor: "#ffffff",
+              borderColor: "#e2e8f0",
+              iconColor: "#0891b2",
+              labelColor: "#0f172a",
+              subTextColor: "#64748b"
+            },
+            {
+              id: "reliable",
+              icon: "check_badge",
+              label: "Reliable",
+              subText: "Clear dates",
+              bgColor: "#ffffff",
+              borderColor: "#e2e8f0",
+              iconColor: "#16a34a",
+              labelColor: "#0f172a",
+              subTextColor: "#64748b"
+            }
+          ]
+        }
+      },
+      {
+        id: "ica-policy",
+        type: "policy_accordion",
+        settings: {
+          openFirst: false,
+          borderWidth: 1,
+          itemRadius: 12,
+          itemPadding: 10,
+          itemGap: 8,
+          items: [
+            {
+              id: "country",
+              title: "Country-aware estimate",
+              body: "Dates update based on selected delivery country.",
+              icon: "map_pin",
+              bgColor: "#ffffff",
+              borderColor: "#e2e8f0",
+              iconColor: "#0891b2",
+              titleColor: "#0f172a",
+              bodyColor: "#64748b"
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  seasonal_sale_window: {
+    style: "custom",
+    textColor: "#4c0519",
+    iconColor: "#e11d48",
+    bgColor: "#fff1f2",
+    borderColor: "#fecdd3",
+    borderRadius: 18,
+    padding: 16,
+    bgGradient: "linear-gradient(135deg, #fff1f2 0%, #ffffff 45%, #fef3c7 100%)",
+    customBlocks: [
+      {
+        id: "ssw-timer",
+        type: "timer",
+        settings: {
+          text: "Sale shipping window ends in {countdown}",
+          bgColor: "#ffe4e6",
+          textColor: "#9f1239",
+          color: "#e11d48",
+          borderRadius: 999,
+          padding: 10,
+          fontWeight: "700"
+        }
+      },
+      {
+        id: "ssw-banner",
+        type: "banner",
+        settings: {
+          text: "Order today for arrival by {max_date}",
+          type: "warning",
+          icon: "tag",
+          bgColor: "#fef3c7",
+          borderColor: "#fde68a",
+          textColor: "#713f12",
+          iconColor: "#d97706",
+          borderWidth: 1,
+          borderRadius: 12
+        }
+      },
+      {
+        id: "ssw-steps",
+        type: "steps",
+        settings: {
+          preset: "timeline_dots",
+          connectorStyle: "solid",
+          itemGap: 12,
+          iconSize: 18,
+          borderWidth: 2,
+          step1Label: "Order",
+          step1SubText: "{order_date}",
+          step1Icon: "cart",
+          step2Label: "Sale pack",
+          step2SubText: "{ship_date}",
+          step2Icon: "package",
+          step3Label: "Delivered",
+          step3SubText: "{max_date}",
+          step3Icon: "home"
+        }
+      },
+      {
+        id: "ssw-trust",
+        type: "trust_badges",
+        settings: {
+          rowGap: 8,
+          itemPadding: 8,
+          itemRadius: 999,
+          iconSize: 15,
+          badges: [
+            {
+              id: "discount",
+              icon: "tag",
+              label: "Promo ready",
+              subText: "",
+              bgColor: "#ffffff",
+              borderColor: "#fecdd3",
+              iconColor: "#e11d48",
+              labelColor: "#9f1239"
+            },
+            {
+              id: "delivery",
+              icon: "truck",
+              label: "Fast dispatch",
+              subText: "",
+              bgColor: "#ffffff",
+              borderColor: "#fde68a",
+              iconColor: "#d97706",
+              labelColor: "#713f12"
+            }
+          ]
         }
       }
     ]

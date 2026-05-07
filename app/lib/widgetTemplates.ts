@@ -51,6 +51,7 @@ export type SavedWidget = {
   step3SubText: string | null;
   step3Icon: string | null;
   updatedAt: string;
+  usedByRuleCount?: number;
 };
 
 export const CATEGORIES: TemplateCategory[] = [
@@ -81,6 +82,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     category: "Animated",
     discount: "64% off",
     badgeTone: "blue",
+  },
+  {
+    name: "Countdown Priority",
+    description: "Timer, queue progress, steps, and trust badges.",
+    style: "animated_countdown_priority",
+    category: "Animated",
+    discount: "66% off",
+    badgeTone: "amber",
   },
   {
     name: "Urgent Pulse",
@@ -149,6 +158,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "green",
   },
   {
+    name: "Premium Pack",
+    description: "Premium packing promise with fulfillment details.",
+    style: "industry_premium_pack",
+    category: "Industry",
+    discount: "57% off",
+    badgeTone: "pink",
+  },
+  {
     name: "Compact Tracker",
     description: "Dense order process for product pages with less space.",
     style: "process_compact_tracker",
@@ -189,6 +206,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "cyan",
   },
   {
+    name: "Split Fulfillment",
+    description: "Warehouse and carrier timeline with progress.",
+    style: "process_split_fulfillment",
+    category: "Order process",
+    discount: "54% off",
+    badgeTone: "green",
+  },
+  {
     name: "Dark Luxury",
     description: "Premium dark delivery tracker for luxury stores.",
     style: "dark_luxury_tracker",
@@ -221,6 +246,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "red",
   },
   {
+    name: "Dark Command Route",
+    description: "High-contrast route command with live trust signals.",
+    style: "dark_command_route",
+    category: "Dark",
+    discount: "58% off",
+    badgeTone: "cyan",
+  },
+  {
     name: "Clean ETA",
     description: "Minimal light template for quiet storefronts.",
     style: "light_clean_eta",
@@ -250,6 +283,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     style: "blue_boxed_steps",
     category: "Light",
     discount: "57% off",
+    badgeTone: "blue",
+  },
+  {
+    name: "Concierge ETA",
+    description: "Polished promise card with delivery policy details.",
+    style: "light_concierge_eta",
+    category: "Light",
+    discount: "49% off",
     badgeTone: "blue",
   },
   {
@@ -285,6 +326,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     badgeTone: "blue",
   },
   {
+    name: "Checkout Assurance",
+    description: "Shipping facts, badges, and policy context for checkout.",
+    style: "informative_checkout_assurance",
+    category: "Informative",
+    discount: "42% off",
+    badgeTone: "cyan",
+  },
+  {
     name: "Holiday Gift",
     description: "Seasonal delivery window for gift campaigns.",
     style: "seasonal_holiday_gift",
@@ -315,6 +364,14 @@ export const WIDGET_TEMPLATES: TemplateMeta[] = [
     category: "Seasonal",
     discount: "73% off",
     badgeTone: "green",
+  },
+  {
+    name: "Sale Window",
+    description: "Seasonal countdown with promo and dispatch cues.",
+    style: "seasonal_sale_window",
+    category: "Seasonal",
+    discount: "71% off",
+    badgeTone: "red",
   },
 ];
 

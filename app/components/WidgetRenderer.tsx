@@ -51,6 +51,26 @@ export type {
 const hasTimelineConnector = (preset: string) => preset === "timeline_dots";
 const hasVerticalConnector = (preset: string) => preset === "vertical";
 
+const hexLuminance = (color?: string) => {
+  const value = color?.trim();
+  if (!value || !/^#[0-9a-f]{3,8}$/i.test(value)) return null;
+  const hex = value.slice(1);
+  const fullHex = hex.length === 3
+    ? hex.split("").map((char) => `${char}${char}`).join("")
+    : hex.slice(0, 6);
+  if (fullHex.length !== 6) return null;
+  const channels = [0, 2, 4].map((offset) => parseInt(fullHex.slice(offset, offset + 2), 16) / 255);
+  const linear = channels.map((channel) =>
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+};
+
+const isDarkHex = (color?: string) => {
+  const luminance = hexLuminance(color);
+  return luminance !== null && luminance < 0.35;
+};
+
 const LORDICON_SCRIPT_ID = "bp-lordicon-player";
 const LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
 const LORDICON_TRIGGER_VALUES = new Set(["in", "click", "hover", "loop", "loop-on-hover", "boomerang", "morph", "sequence"]);
@@ -407,21 +427,31 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
     const preset = s.preset || 'horizontal';
     const items = normalizeStepItems(s);
     const accent = blockIconColor(s);
+    const usesDarkSurface = isDarkHex(bgColor) && (!s.bgColor || isDarkHex(s.bgColor));
+    const baseStepIconSize = Number(s.iconSize || 24);
+    const hasAnimatedStepIcon =
+      s.iconAnimation === "lordicon" ||
+      items.some((item) => Boolean(getAnimatedIconFileKey(item.icon)));
+    const stepDotIconSize =
+      hasAnimatedStepIcon && s.lordiconSize !== undefined
+        ? Math.max(baseStepIconSize, clampNumber(s.lordiconSize, baseStepIconSize, 8, 128))
+        : baseStepIconSize;
 
     const presetClass = `bp-steps-${preset.replace('_', '-')}`;
     
     return (
       <div key={s.id} className={`bp-steps ${presetClass}`} data-count={items.length} style={{ 
-        '--bp-size': `${s.iconSize || 24}px`,
+        '--bp-size': `${stepDotIconSize}px`,
         '--bp-gap': `${s.itemGap || 16}px`,
       } as any}>
         {items.map((item, i) => {
           const isFirst = i === 0;
           const isLast = i === items.length - 1;
-          const dotBg = item.dotColor || (isFirst ? accent : '#fff');
-          const stepIconColor = item.iconColor || (isFirst ? '#fff' : accent);
+          const dotBg = item.dotColor || accent;
+          const dotIsDark = hexLuminance(dotBg) !== null && isDarkHex(dotBg);
+          const stepIconColor = item.iconColor || (dotIsDark ? '#fff' : textColor || '#111827');
           const usesItemSurface = ['boxed_cards', 'boxed_steps', 'split_segments', 'thick', 'chevron'].includes(preset);
-          const stepBg = usesItemSurface ? item.bgColor : undefined;
+          const stepBg = usesItemSurface ? item.bgColor || (usesDarkSurface ? 'rgba(255,255,255,0.06)' : undefined) : undefined;
           
           let itemClass = 'bp-timeline-item';
           if (preset === 'vertical') itemClass = 'bp-vertical-item';
@@ -429,6 +459,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           else if (preset === 'split_segments' || preset === 'thick' || preset === 'chevron') itemClass = 'bp-segment';
 
           const hasItemBorder = (preset === 'boxed_cards' || preset === 'boxed_steps' || preset === 'split_segments');
+          const itemBorderColor = item.borderColor || (isFirst ? accent : (usesDarkSurface ? 'rgba(148,163,184,0.35)' : '#eee'));
           const dotBorderColor = usesItemSurface ? (item.borderColor || dotBg) : dotBg;
 
           return (
@@ -436,7 +467,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
               background: stepBg,
               padding: s.padding !== undefined ? `${s.padding}px` : undefined,
               borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
-              border: (s.borderWidth && hasItemBorder) ? `${s.borderWidth}px solid ${item.borderColor || (isFirst ? accent : '#eee')}` : undefined
+              border: (s.borderWidth && hasItemBorder) ? `${s.borderWidth}px solid ${itemBorderColor}` : undefined
             }}>
               {!isLast && hasTimelineConnector(preset) && <div className="bp-timeline-connector" style={{ borderTopStyle: s.connectorStyle || 'dashed', borderTopColor: accent } as any} />}
               {!isLast && hasVerticalConnector(preset) && <div className="bp-vertical-connector" style={{ borderLeftStyle: s.connectorStyle || 'dashed', borderLeftColor: accent } as any} />}
@@ -450,8 +481,8 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: preset === 'vertical' ? 'left' : 'center' }}>
-                <div className="bp-text-label" style={{ color: item.labelColor || undefined, fontSize: s.labelFontSize !== undefined ? `${s.labelFontSize}px` : undefined }}>{formatText(item.label)}</div>
-                <div className="bp-text-sub" style={{ color: item.subTextColor || undefined, fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(item.subText)}</div>
+                <div className="bp-text-label" style={{ color: item.labelColor || (usesDarkSurface ? textColor : undefined), fontSize: s.labelFontSize !== undefined ? `${s.labelFontSize}px` : undefined }}>{formatText(item.label)}</div>
+                <div className="bp-text-sub" style={{ color: item.subTextColor || (usesDarkSurface ? 'rgba(248,250,252,0.68)' : undefined), fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(item.subText)}</div>
               </div>
             </div>
           );

@@ -59,6 +59,49 @@ type ActionResult = {
   error?: string;
 };
 
+async function deleteRulesAndOrphanRuleDesigns(shop: string, ids: string[]) {
+  const rules = await prisma.deliveryRule.findMany({
+    where: { id: { in: ids }, shop },
+    select: {
+      widget: {
+        select: {
+          id: true,
+          isDefault: true,
+          isReusable: true,
+        },
+      },
+    },
+  });
+  const ruleDesignIds = Array.from(
+    new Set(
+      rules
+        .map((rule) => rule.widget)
+        .filter((widget): widget is { id: string; isDefault: boolean; isReusable: boolean } =>
+          Boolean(widget && !widget.isDefault && !widget.isReusable),
+        )
+        .map((widget) => widget.id),
+    ),
+  );
+
+  await prisma.$transaction(async (tx) => {
+    await tx.deliveryRule.deleteMany({
+      where: { id: { in: ids }, shop },
+    });
+
+    if (ruleDesignIds.length > 0) {
+      await tx.widget.deleteMany({
+        where: {
+          id: { in: ruleDesignIds },
+          shop,
+          isDefault: false,
+          isReusable: false,
+          deliveryRules: { none: {} },
+        },
+      });
+    }
+  });
+}
+
 const BUTTON_BASE =
   "inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50";
 const BUTTON_PRIMARY = `${BUTTON_BASE} bg-gray-900 text-white shadow-md shadow-gray-200 hover:bg-black`;
@@ -182,7 +225,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "delete") {
     const id = String(formData.get("id"));
-    await prisma.deliveryRule.deleteMany({ where: { id, shop: session.shop } });
+    await deleteRulesAndOrphanRuleDesigns(session.shop, [id]);
     return data({ success: true });
   }
 
@@ -218,9 +261,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return data({ error: "Select at least one rule." }, { status: 400 });
     }
 
-    await prisma.deliveryRule.deleteMany({
-      where: { id: { in: bulkIds }, shop: session.shop },
-    });
+    await deleteRulesAndOrphanRuleDesigns(session.shop, bulkIds);
     return data({ success: true });
   }
 

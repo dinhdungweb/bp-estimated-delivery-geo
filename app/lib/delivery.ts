@@ -45,6 +45,13 @@ export type WidgetStyleId =
   | "informative_dispatch_stack"
   | "seasonal_holiday_gift"
   | "seasonal_summer_fresh"
+  | "animated_countdown_priority"
+  | "industry_premium_pack"
+  | "process_split_fulfillment"
+  | "dark_command_route"
+  | "light_concierge_eta"
+  | "informative_checkout_assurance"
+  | "seasonal_sale_window"
   | "custom";
 
 export type BlockType =

@@ -66,6 +66,7 @@ import {
   ensureDefaultWidget,
   hasDuplicateDeliveryRule,
 } from "../lib/deliveryRules.server";
+import { widgetCopyData } from "../lib/widgetCopies.server";
 import {
   CATEGORIES,
   MAIN_TABS,
@@ -77,6 +78,7 @@ import {
   type TemplateMainTab,
   type TemplateMeta,
 } from "../lib/widgetTemplates";
+import { hydrateBlocksForTemplate } from "../lib/widgetStyleSamples";
 
 type RuleEditorRule = {
   id: string;
@@ -108,8 +110,10 @@ type ActionResult = {
   error?: string;
   success?: boolean;
   appliedWidgetId?: string;
+  appliedWidget?: RuleEditorWidget;
   sourceDesignId?: string;
   designName?: string;
+  templateApplied?: boolean;
 };
 
 type AdminGraphqlClient = {
@@ -141,6 +145,11 @@ type ShopifyAdminGlobal = {
 
 type TargetMode = "product" | "collection" | "tag";
 type OperationalTab = "timing" | "cutoff" | "holidays" | "visibility";
+
+type RuleEditorWidget = Omit<Widget, "createdAt" | "updatedAt"> & {
+  createdAt: string | Date;
+  updatedAt: string | Date;
+};
 
 type TargetResource = {
   id: string;
@@ -854,8 +863,10 @@ function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templa
     name: templateName || "Template Design",
     isDefault: false,
     isActive: true,
+    isReusable: false,
+    sourceWidgetId: null,
     widgetStyle: "custom",
-    customBlocks: template.customBlocks as unknown as Prisma.InputJsonValue,
+    customBlocks: hydrateBlocksForTemplate(template.customBlocks, template) as unknown as Prisma.InputJsonValue,
     textColor: template.textColor || "#000000",
     iconColor: template.iconColor || "#0033cc",
     bgColor: template.bgColor || "#ffffff",
@@ -878,6 +889,14 @@ function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templa
     step3Label: template.step3Label ?? null,
     step3SubText: template.step3SubText ?? null,
     step3Icon: template.step3Icon ?? null,
+  };
+}
+
+function serializeWidget(widget: Widget): RuleEditorWidget {
+  return {
+    ...widget,
+    createdAt: widget.createdAt.toISOString(),
+    updatedAt: widget.updatedAt.toISOString(),
   };
 }
 
@@ -952,7 +971,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     rule,
     widgets,
     savedWidgets: widgets
-      .filter((widget) => !widget.isDefault)
+      .filter((widget) => !widget.isDefault && widget.isReusable)
       .map((widget) => ({
         ...widget,
         updatedAt: widget.updatedAt.toISOString(),
@@ -1022,6 +1041,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         name: "New Design",
         isDefault: false,
         isActive: true,
+        isReusable: false,
+        sourceWidgetId: null,
         padding: 16,
         customBlocks: buildFallbackBlocks(
           {},
@@ -1053,8 +1074,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return data({
       success: true,
       appliedWidgetId: ruleWidget.id,
-      sourceDesignId: ruleWidget.id,
+      appliedWidget: serializeWidget(ruleWidget),
+      sourceDesignId: "",
       designName: ruleWidget.name,
+      templateApplied: true,
     });
   }
 
@@ -1065,18 +1088,29 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     const sourceWidget = await prisma.widget.findFirst({
-      where: { id: widgetId, shop: session.shop, isDefault: false },
+      where: { id: widgetId, shop: session.shop, isDefault: false, isReusable: true },
     });
 
     if (!sourceWidget) {
       return data({ error: "Design not found" }, { status: 404 });
     }
 
+    const ruleWidget = await prisma.widget.create({
+      data: widgetCopyData(sourceWidget, {
+        shop: session.shop,
+        isReusable: false,
+        isActive: true,
+        sourceWidgetId: sourceWidget.id,
+      }),
+    });
+
     return data({
       success: true,
-      appliedWidgetId: sourceWidget.id,
+      appliedWidgetId: ruleWidget.id,
+      appliedWidget: serializeWidget(ruleWidget),
       sourceDesignId: sourceWidget.id,
       designName: sourceWidget.name,
+      templateApplied: false,
     });
   }
 
@@ -1280,18 +1314,26 @@ export default function RuleEditorPage() {
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>("Animated");
   const [pendingStyle, setPendingStyle] = useState<TemplateId | null>(null);
   const [pendingDesignId, setPendingDesignId] = useState<string | null>(null);
+  const [customizeAfterApply, setCustomizeAfterApply] = useState(false);
   const [templateWorkflow, setTemplateWorkflow] = useState({
     templateApplied,
     sourceDesignId,
     designName,
   });
 
-  const typedWidgets = widgets as Widget[];
+  const [localWidgets, setLocalWidgets] = useState<RuleEditorWidget[]>(
+    () => widgets as RuleEditorWidget[],
+  );
+  const typedWidgets = localWidgets;
   const typedSavedWidgets = savedWidgets as SavedWidget[];
   const shopifyMarkets = loaderShopifyMarkets as ShopifyMarketOption[];
   const selectedWidget = useMemo(() => {
     return typedWidgets.find((widget) => widget.id === widgetId) || typedWidgets[0];
   }, [typedWidgets, widgetId]);
+
+  useEffect(() => {
+    setLocalWidgets(widgets as RuleEditorWidget[]);
+  }, [widgets]);
   const selectedProductIds = useMemo(() => normalizeProductIds(targetProducts), [targetProducts]);
   const selectedCollectionIds = useMemo(() => normalizeCollectionIds(targetCollections), [targetCollections]);
   const isLoadingMoreProducts = productTargetFetcher.state !== "idle";
@@ -1310,17 +1352,14 @@ export default function RuleEditorPage() {
 
     const params = new URLSearchParams();
     params.set("returnTo", ruleEditorReturnTo);
-    if (selectedWidget.id === defaultWidgetId) {
-      if (templateWorkflow.templateApplied) params.set("saveAsDesign", "1");
-      if (templateWorkflow.sourceDesignId) params.set("sourceDesignId", templateWorkflow.sourceDesignId);
-      if (templateWorkflow.designName) params.set("designName", templateWorkflow.designName);
-    } else if (!selectedWidget.isDefault) {
-      params.set("sourceDesignId", selectedWidget.id);
-    }
+    const sourceForEditor = templateWorkflow.sourceDesignId || selectedWidget.sourceWidgetId || "";
+    if (templateWorkflow.templateApplied) params.set("saveAsDesign", "1");
+    if (sourceForEditor) params.set("sourceDesignId", sourceForEditor);
+    if (templateWorkflow.designName) params.set("designName", templateWorkflow.designName);
 
     const query = params.toString();
     return `/app/widgets/${selectedWidget.id}${query ? `?${query}` : ""}`;
-  }, [defaultWidgetId, ruleEditorReturnTo, selectedWidget, templateWorkflow]);
+  }, [ruleEditorReturnTo, selectedWidget, templateWorkflow]);
 
   const widgetEditorUrl = useCallback((id: string) => {
     const params = new URLSearchParams();
@@ -1527,9 +1566,13 @@ export default function RuleEditorPage() {
     );
   };
 
-  const handleUseSavedDesign = (widget: SavedWidget) => {
+  const handleUseSavedDesign = (
+    widget: Pick<SavedWidget, "id" | "name">,
+    options: { customizeAfterApply?: boolean } = {},
+  ) => {
     setPendingStyle(null);
     setPendingDesignId(widget.id);
+    setCustomizeAfterApply(Boolean(options.customizeAfterApply));
     submit(
       { intent: "saved-design", widgetId: widget.id, widgetName: widget.name },
       { method: "post" },
@@ -1589,16 +1632,33 @@ export default function RuleEditorPage() {
   useEffect(() => {
     if (!actionData?.appliedWidgetId) return;
 
+    if (actionData.appliedWidget) {
+      setLocalWidgets((current) => {
+        const nextWidgets = current.filter((widget) => widget.id !== actionData.appliedWidget?.id);
+        return [actionData.appliedWidget as RuleEditorWidget, ...nextWidgets];
+      });
+    }
     setWidgetId(actionData.appliedWidgetId);
     setTemplateWorkflow({
-      templateApplied: false,
+      templateApplied: Boolean(actionData.templateApplied),
       sourceDesignId: actionData.sourceDesignId || "",
       designName: actionData.designName || "",
     });
     setTemplateModalOpen(false);
     setPendingStyle(null);
     setPendingDesignId(null);
-  }, [actionData]);
+    if (customizeAfterApply) {
+      const returnParams = new URLSearchParams(location.search);
+      returnParams.set("selectedWidgetId", actionData.appliedWidgetId);
+      const returnQuery = returnParams.toString();
+      const nextReturnTo = `${location.pathname}${returnQuery ? `?${returnQuery}` : ""}`;
+      const editorParams = new URLSearchParams({ returnTo: nextReturnTo });
+      if (actionData.sourceDesignId) editorParams.set("sourceDesignId", actionData.sourceDesignId);
+      if (actionData.designName) editorParams.set("designName", actionData.designName);
+      setCustomizeAfterApply(false);
+      navigate(`/app/widgets/${actionData.appliedWidgetId}?${editorParams.toString()}`);
+    }
+  }, [actionData, customizeAfterApply, location.pathname, location.search, navigate]);
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
@@ -1708,7 +1768,13 @@ export default function RuleEditorPage() {
                   {selectedWidget && (
                     <button
                       type="button"
-                      onClick={() => navigate(customizeUrl)}
+                      onClick={() => {
+                        if (selectedWidget.isReusable && !selectedWidget.isDefault) {
+                          handleUseSavedDesign(selectedWidget, { customizeAfterApply: true });
+                          return;
+                        }
+                        navigate(customizeUrl);
+                      }}
                       className={`${BUTTON_PRIMARY} gap-2 whitespace-nowrap`}
                     >
                       <span className="h-4 w-4 text-white"><Icon source={EditIcon} /></span>
@@ -1725,7 +1791,11 @@ export default function RuleEditorPage() {
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Current design</p>
                         <p className="text-sm font-bold text-gray-900">{selectedWidget.name}</p>
                         <p className="mt-1 text-xs text-gray-500">
-                          {selectedWidget.isDefault ? "Default storefront design" : "Saved My design"}
+                          {selectedWidget.isDefault
+                            ? "Default storefront design"
+                            : selectedWidget.isReusable
+                              ? "Saved My design"
+                              : "Rule design"}
                         </p>
                       </div>
                       <Badge tone={selectedWidget.isActive ? "success" : "attention"}>
@@ -2293,6 +2363,10 @@ export default function RuleEditorPage() {
                     {visibleTemplates.map((template) => {
                       const isApplying = submittingIntent === "apply-template" && pendingStyle === template.style;
                       const settings = TEMPLATE_DEFAULTS[template.style];
+                      const previewSettings = {
+                        ...settings,
+                        customBlocks: hydrateBlocksForTemplate(settings.customBlocks, settings),
+                      };
 
                       return (
                         <article
@@ -2301,13 +2375,13 @@ export default function RuleEditorPage() {
                         >
                           <div className="p-4">
                             <div className="rounded-xl bg-gray-50 p-2">
-                              <WidgetPreviewRenderer settings={{ ...settings, shadow: "none" }} />
+                              <WidgetPreviewRenderer settings={{ ...previewSettings, shadow: "none" }} />
                             </div>
                           </div>
                           <div className="mt-auto border-t border-gray-100 p-4">
-                            <div className="mb-3 min-h-[58px]">
+                            <div className="mb-2 min-h-[48px]">
                               <h3 className="text-sm font-bold text-gray-950">{template.name}</h3>
-                              <p className="mt-1 text-xs leading-5 text-gray-500">{template.description}</p>
+                              <p className="mt-1 line-clamp-2 text-xs leading-4 text-gray-500">{template.description}</p>
                             </div>
                             <button
                               type="button"
@@ -2348,6 +2422,8 @@ export default function RuleEditorPage() {
                         day: "numeric",
                       }).format(new Date(widget.updatedAt));
                       const isApplying = submittingIntent === "saved-design" && pendingDesignId === widget.id;
+                      const usedByRuleCount = widget.usedByRuleCount || 0;
+                      const usageLabel = usedByRuleCount === 1 ? "Used by 1 rule" : `Used by ${usedByRuleCount} rules`;
 
                       return (
                         <article
@@ -2360,20 +2436,20 @@ export default function RuleEditorPage() {
                             </div>
                           </div>
                           <div className="mt-auto border-t border-gray-100 p-4">
-                            <div className="mb-3 min-h-[70px]">
-                              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                            <div className="mb-2 min-h-[48px]">
+                              <div className="flex items-center justify-between gap-3">
+                                <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-gray-950">{widget.name}</h3>
                                 <span
-                                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                    widget.isActive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                    usedByRuleCount > 0 ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"
                                   }`}
                                 >
-                                  {widget.isActive ? "Active" : "Disabled"}
+                                  {usedByRuleCount > 0 ? usageLabel : "Unused"}
                                 </span>
                               </div>
-                              <h3 className="text-sm font-bold text-gray-950">{widget.name}</h3>
-                              <p className="mt-1 text-xs leading-5 text-gray-500">Updated {updatedAt}</p>
+                              <p className="mt-1 text-xs leading-4 text-gray-500">Updated {updatedAt}</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleUseSavedDesign(widget)}
@@ -2381,14 +2457,6 @@ export default function RuleEditorPage() {
                                 className={`${BUTTON_PRIMARY} w-full`}
                               >
                                 {isApplying ? "Applying..." : "Use design"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => navigate(widgetEditorUrl(widget.id))}
-                                disabled={isSubmitting}
-                                className={`${BUTTON_SECONDARY} w-full`}
-                              >
-                                Customize
                               </button>
                             </div>
                           </div>

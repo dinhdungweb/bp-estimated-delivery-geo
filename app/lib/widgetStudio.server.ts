@@ -12,8 +12,8 @@ export type WidgetStudioDb = Pick<PrismaClient, "widget" | "$transaction">;
 export type SaveWidgetStudioResult = {
   success?: boolean;
   newId?: string;
+  designName?: string;
   savedAsDesign?: boolean;
-  updatedSourceDesign?: boolean;
   error?: string;
   status?: number;
 };
@@ -104,53 +104,33 @@ export async function saveWidgetStudio({
   };
 
   if (widgetId === "new") {
-    const newWidget = await db.widget.create({ data });
+    const newWidget = await db.widget.create({ data: { ...data, isReusable: true } });
     return { success: true, newId: newWidget.id };
   }
 
-  if (sourceDesignId) {
-    const sourceDesign = await db.widget.findFirst({
-      where: { id: sourceDesignId, shop, isDefault: false },
-      select: { id: true },
-    });
-
-    if (!sourceDesign) {
-      return { error: "Source design not found", status: 404 };
-    }
-
-    await db.$transaction([
+  if (saveAsDesign) {
+    const [, savedDesign] = await db.$transaction([
       db.widget.updateMany({
         where: { id: widgetId, shop },
         data,
       }),
-      db.widget.update({
-        where: { id: sourceDesign.id },
+      db.widget.create({
         data: {
           ...data,
           name: designRecordName,
           isDefault: false,
+          isReusable: true,
+          sourceWidgetId: sourceDesignId || widgetId,
         },
       }),
     ]);
 
-    return { success: true, newId: sourceDesign.id, updatedSourceDesign: true };
-  }
-
-  if (saveAsDesign) {
-    await db.widget.updateMany({
-      where: { id: widgetId, shop },
-      data,
-    });
-
-    const savedDesign = await db.widget.create({
-      data: {
-        ...data,
-        name: designRecordName,
-        isDefault: false,
-      },
-    });
-
-    return { success: true, newId: savedDesign.id, savedAsDesign: true };
+    return {
+      success: true,
+      newId: savedDesign.id,
+      designName: savedDesign.name,
+      savedAsDesign: true,
+    };
   }
 
   await db.widget.updateMany({

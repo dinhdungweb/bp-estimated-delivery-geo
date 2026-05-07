@@ -28,6 +28,8 @@ function widget(overrides: Partial<Widget>): Widget {
     name: "Widget",
     isDefault: false,
     isActive: true,
+    isReusable: true,
+    sourceWidgetId: null,
     targetCountries: null,
     targetProducts: null,
     targetTags: null,
