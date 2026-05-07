@@ -147,11 +147,158 @@ export interface APIDeliveryResponse {
   minDate?: string;
   maxDate?: string;
   shippingMessage?: string;
+  countdownSeconds?: number;
   settings?: WidgetSettingsProps;
 }
 
 export const DEFAULT_SHIPPING_MESSAGE =
   "Order today and get it by: {min_date} - {max_date}";
+
+export const INVENTORY_STATUS_OPTIONS = [
+  {
+    value: "both",
+    label: "Both",
+    description: "Works with any inventory status whether in stock or out of stock.",
+  },
+  {
+    value: "in_stock",
+    label: "In Stock Only",
+    description: "Considers only product has available inventory (QTY greater than 0).",
+  },
+  {
+    value: "out_of_stock_continue",
+    label: "Out of stock (continue selling on)",
+    description: "Considers out-of-stock items that are still available for purchase.",
+  },
+  {
+    value: "out_of_stock_stop",
+    label: "Out of stock (Continue selling off)",
+    description: "Considers out-of-stock items that cannot be purchased.",
+  },
+] as const;
+
+export type InventoryStatus = (typeof INVENTORY_STATUS_OPTIONS)[number]["value"];
+export type ProductInventoryStatus = Exclude<InventoryStatus, "both"> | "unknown";
+
+export const INVENTORY_STATUS_BOTH: InventoryStatus = "both";
+
+const INVENTORY_STATUS_VALUES = new Set<InventoryStatus>(
+  INVENTORY_STATUS_OPTIONS.map((option) => option.value),
+);
+
+export function normalizeRuleInventoryStatus(value: unknown): InventoryStatus {
+  const status = String(value ?? "").trim().toLowerCase();
+  return INVENTORY_STATUS_VALUES.has(status as InventoryStatus)
+    ? (status as InventoryStatus)
+    : INVENTORY_STATUS_BOTH;
+}
+
+export function normalizeProductInventoryStatus(value: unknown): ProductInventoryStatus {
+  const status = String(value ?? "").trim().toLowerCase();
+  if (status === "in_stock" || status === "out_of_stock_continue" || status === "out_of_stock_stop") {
+    return status;
+  }
+  return "unknown";
+}
+
+export function inventoryStatusLabel(value: unknown) {
+  const status = normalizeRuleInventoryStatus(value);
+  return INVENTORY_STATUS_OPTIONS.find((option) => option.value === status)?.label || "Both";
+}
+
+export function inventoryStatusMatches(
+  ruleInventoryStatus: unknown,
+  productInventoryStatus: ProductInventoryStatus,
+) {
+  const ruleStatus = normalizeRuleInventoryStatus(ruleInventoryStatus);
+  if (ruleStatus === INVENTORY_STATUS_BOTH) return true;
+  return productInventoryStatus !== "unknown" && ruleStatus === productInventoryStatus;
+}
+
+export function inventoryStatusRank(
+  ruleInventoryStatus: unknown,
+  productInventoryStatus: ProductInventoryStatus,
+) {
+  const ruleStatus = normalizeRuleInventoryStatus(ruleInventoryStatus);
+  if (productInventoryStatus !== "unknown" && ruleStatus === productInventoryStatus) return 0;
+  if (ruleStatus === INVENTORY_STATUS_BOTH) return productInventoryStatus === "unknown" ? 0 : 1;
+  return 2;
+}
+
+export const OPERATIONAL_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Bangkok",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+] as const;
+
+export const DATE_LOCALE_OPTIONS = [
+  { value: "en-AU", label: "English (AU)" },
+  { value: "en-US", label: "English (US)" },
+  { value: "vi-VN", label: "Vietnamese" },
+  { value: "fr-FR", label: "French" },
+  { value: "de-DE", label: "German" },
+] as const;
+
+export const VISIBILITY_MODE_OPTIONS = [
+  { value: "visible", label: "Show widget" },
+  { value: "hidden", label: "Hide widget" },
+] as const;
+
+export type VisibilityMode = (typeof VISIBILITY_MODE_OPTIONS)[number]["value"];
+
+const DATE_LOCALES = new Set(DATE_LOCALE_OPTIONS.map((option) => option.value));
+const VISIBILITY_MODES = new Set<VisibilityMode>(VISIBILITY_MODE_OPTIONS.map((option) => option.value));
+
+export function normalizeCutoffTime(value: unknown) {
+  const time = String(value ?? "").trim();
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : "17:00";
+}
+
+export function normalizeTimeZone(value: unknown) {
+  const timeZone = String(value ?? "").trim();
+  if (!timeZone) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return "UTC";
+  }
+}
+
+export function normalizeHolidayDates(value: unknown) {
+  const source = Array.isArray(value)
+    ? value.join("\n")
+    : String(value ?? "");
+  const dates = source.match(/\d{4}-\d{2}-\d{2}/g) || [];
+  return Array.from(new Set(dates)).slice(0, 100);
+}
+
+export function normalizeVisibilityMode(value: unknown): VisibilityMode {
+  const mode = String(value ?? "").trim().toLowerCase();
+  return VISIBILITY_MODES.has(mode as VisibilityMode) ? (mode as VisibilityMode) : "visible";
+}
+
+export function normalizeTimerSeconds(value: unknown) {
+  const parsed = Number.parseInt(String(value ?? "8100"), 10);
+  if (!Number.isInteger(parsed)) return 8100;
+  return Math.min(86_400, Math.max(0, parsed));
+}
+
+export function normalizeDateLocale(value: unknown) {
+  const locale = String(value ?? "").trim();
+  return DATE_LOCALES.has(locale as (typeof DATE_LOCALE_OPTIONS)[number]["value"])
+    ? locale
+    : "en-AU";
+}
 
 const BLOCK_TYPES = new Set<BlockType>([
   "header",
@@ -543,11 +690,13 @@ export function selectDeliveryRule<T extends DeliveryRule>(
   productTags: string[],
   productId?: string,
   productCollectionIds: string[] = [],
+  productInventoryStatus: ProductInventoryStatus = "unknown",
 ): T | undefined {
   const normalizedCountry = normalizeCountry(countryCode);
   const normalizedTags = normalizeTags(productTags);
   const normalizedProductId = normalizeProductId(productId);
   const normalizedCollectionIds = normalizeCollectionIds(productCollectionIds);
+  const normalizedInventoryStatus = normalizeProductInventoryStatus(productInventoryStatus);
   const exactCountryRank = 0;
   const targetCountryBaseRank = 1;
   const allCountriesRank = 100_000;
@@ -571,7 +720,12 @@ export function selectDeliveryRule<T extends DeliveryRule>(
   const candidates = rules
     .filter((rule) => rule.isActive)
     .filter((rule) => countryRank(rule) < noCountryMatchRank)
-    .sort((a, b) => countryRank(a) - countryRank(b));
+    .filter((rule) => inventoryStatusMatches(rule.inventoryStatus, normalizedInventoryStatus))
+    .sort((a, b) => (
+      countryRank(a) - countryRank(b) ||
+      inventoryStatusRank(a.inventoryStatus, normalizedInventoryStatus) -
+        inventoryStatusRank(b.inventoryStatus, normalizedInventoryStatus)
+    ));
 
   if (normalizedProductId) {
     const productMatch = candidates.find((rule) =>

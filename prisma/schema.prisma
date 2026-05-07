@@ -51,16 +51,25 @@ model DeliveryRule {
   targetProducts    Json?
   targetCollections Json?
   targetTags        Json?
+  inventoryStatus   String   @default("both")
   minDays           Int      @default(3)
   maxDays           Int      @default(7)
   processingDays    Int      @default(1)
   shippingMessage   String   @default("Order today and get it by: {min_date} - {max_date}")
+  cutoffEnabled     Boolean  @default(false)
+  cutoffTime        String   @default("17:00")
+  cutoffTimezone    String   @default("UTC")
+  holidayDates      Json?
+  visibilityMode    String   @default("visible")
+  timerSeconds      Int      @default(8100)
+  dateLocale        String   @default("en-AU")
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   widget            Widget?  @relation(fields: [widgetId], references: [id], onDelete: SetNull)
 
   @@index([shop, countryCode])
+  @@index([shop, countryCode, inventoryStatus])
   @@index([shop, widgetId])
 }
 

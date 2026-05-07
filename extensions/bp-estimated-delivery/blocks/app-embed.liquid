@@ -12,6 +12,13 @@
 
 {% if product %}
 {% assign widget_id = 'bp-delivery-embed' %}
+{% assign bp_delivery_variant = product.selected_or_first_available_variant %}
+{% assign bp_delivery_inventory_status = 'out_of_stock_stop' %}
+{% if bp_delivery_variant.inventory_quantity > 0 %}
+  {% assign bp_delivery_inventory_status = 'in_stock' %}
+{% elsif bp_delivery_variant.inventory_policy == 'continue' %}
+  {% assign bp_delivery_inventory_status = 'out_of_stock_continue' %}
+{% endif %}
 
 <style>
   #{{ widget_id }} { font-family: inherit; margin: 12px 0; }
@@ -39,10 +46,11 @@
      data-shop="{{ shop.permanent_domain }}"
      data-product-id="{{ product.id }}"
      data-product-title="{{ product.title | escape }}"
-     data-product-price-cents="{{ product.selected_or_first_available_variant.price }}"
+     data-product-price-cents="{{ bp_delivery_variant.price }}"
      data-currency-code="{{ cart.currency.iso_code | default: shop.currency }}"
      data-product-tags="{{ product.tags | join: ',' }}"
      data-product-collections="{{ product.collections | map: 'id' | join: ',' }}"
+     data-inventory-status="{{ bp_delivery_inventory_status }}"
      style="display:none; margin: 12px 0;">
   <div class="bp-skeleton" id="bp-delivery-embed-skeleton">
     <div class="bp-skeleton-line" style="width:70%"></div>

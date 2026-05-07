@@ -5,12 +5,16 @@ import path from "path";
 import {
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
+  normalizeCutoffTime,
   normalizeCollectionIds,
   normalizeCountries,
+  normalizeHolidayDates,
   normalizePolicyItems,
   normalizeProductIds,
   normalizeStepItems,
   normalizeTags,
+  normalizeTimerSeconds,
+  normalizeVisibilityMode,
   normalizeTrustBadges,
   parseBlockConfigs,
   selectDeliveryRule,
@@ -70,10 +74,18 @@ function rule(overrides: Partial<DeliveryRule>): DeliveryRule {
     targetProducts: null,
     targetCollections: null,
     targetTags: null,
+    inventoryStatus: "both",
     minDays: 3,
     maxDays: 7,
     processingDays: 1,
     shippingMessage: DEFAULT_SHIPPING_MESSAGE,
+    cutoffEnabled: false,
+    cutoffTime: "17:00",
+    cutoffTimezone: "UTC",
+    holidayDates: null,
+    visibilityMode: "visible",
+    timerSeconds: 8100,
+    dateLocale: "en-AU",
     isActive: true,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -93,6 +105,18 @@ describe("delivery production helpers", () => {
       "456",
     ]);
     expect(normalizeTags([" VIP ", "vip", "Pre Order"])).toEqual(["vip", "pre order"]);
+  });
+
+  it("normalizes operational rule settings", () => {
+    expect(normalizeCutoffTime("18:30")).toBe("18:30");
+    expect(normalizeCutoffTime("25:00")).toBe("17:00");
+    expect(normalizeHolidayDates("2026-01-01\nbad\n2026-12-25")).toEqual([
+      "2026-01-01",
+      "2026-12-25",
+    ]);
+    expect(normalizeVisibilityMode("hidden")).toBe("hidden");
+    expect(normalizeVisibilityMode("bad")).toBe("visible");
+    expect(normalizeTimerSeconds("90000")).toBe(86400);
   });
 
   it("builds fallback blocks from the shipping message and default step fields", () => {
@@ -220,6 +244,26 @@ describe("delivery production helpers", () => {
     );
     expect(selectDeliveryRule([narrowCountryGroupRule, countryRule], "US", [])?.id).toBe(
       "country",
+    );
+  });
+
+  it("prefers delivery rules that match the current inventory status", () => {
+    const bothRule = rule({ id: "both", countryCode: "US", inventoryStatus: "both" });
+    const inStockRule = rule({ id: "in-stock", countryCode: "US", inventoryStatus: "in_stock" });
+    const outOfStockContinueRule = rule({
+      id: "out-continue",
+      countryCode: "US",
+      inventoryStatus: "out_of_stock_continue",
+    });
+
+    expect(selectDeliveryRule([bothRule, inStockRule], "US", [], "", [], "in_stock")?.id).toBe(
+      "in-stock",
+    );
+    expect(
+      selectDeliveryRule([bothRule, inStockRule, outOfStockContinueRule], "US", [], "", [], "out_of_stock_continue")?.id,
+    ).toBe("out-continue");
+    expect(selectDeliveryRule([inStockRule, bothRule], "US", [], "", [], "unknown")?.id).toBe(
+      "both",
     );
   });
 });
@@ -404,6 +448,45 @@ describe("storefront embed sanitization", () => {
     expect(timerValue?.textContent).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 
+  it("uses the rule countdown duration returned by the app proxy", async () => {
+    document.body.innerHTML = `
+      <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="" style="display:none">
+        <div class="bp-skeleton"></div>
+      </div>
+    `;
+
+    const payload = {
+      enabled: true,
+      orderDate: "Jan 1",
+      shipDate: "Jan 2",
+      minDate: "Jan 3",
+      maxDate: "Jan 4",
+      countdownSeconds: 60,
+      settings: {
+        customBlocks: [
+          {
+            id: "timer",
+            type: "timer",
+            settings: { timerFormat: "{countdown}" },
+          },
+        ],
+      },
+    };
+
+    (window as unknown as { fetch: typeof fetch }).fetch = vi.fn().mockResolvedValue({
+      json: async () => payload,
+    });
+
+    const script = fs.readFileSync(
+      path.join(process.cwd(), "extensions/bp-estimated-delivery/assets/bp-delivery-embed.js"),
+      "utf8",
+    );
+    window.eval(script);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector(".bp-timer-val")?.textContent).toBe("00:00:59");
+  });
+
   it("keeps the timer text blank when merchant explicitly clears it", async () => {
     document.body.innerHTML = `
       <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="" style="display:none">
@@ -441,6 +524,33 @@ describe("storefront embed sanitization", () => {
 
     const label = document.querySelector(".bp-timer .bp-text-label");
     expect(label?.textContent).toBe("");
+  });
+
+  it("passes the product inventory status to the delivery app proxy", async () => {
+    document.body.innerHTML = `
+      <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="" data-inventory-status="out_of_stock_continue" style="display:none">
+        <div class="bp-skeleton"></div>
+      </div>
+    `;
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        enabled: false,
+        countryCode: "ALL",
+        reason: "disabled_or_missing_config",
+      }),
+    });
+    (window as unknown as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const script = fs.readFileSync(
+      path.join(process.cwd(), "extensions/bp-estimated-delivery/assets/bp-delivery-embed.js"),
+      "utf8",
+    );
+    window.eval(script);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("inventory_status=out_of_stock_continue");
   });
 
   it("uses the selected shipping country when the location modal is saved", async () => {

@@ -1285,7 +1285,9 @@
       window.clearInterval(countdownTimerId);
       countdownTimerId = null;
     }
-    var sec = initialSecs || 8100;
+    var sec = Number(initialSecs);
+    if (!Number.isFinite(sec)) sec = 8100;
+    sec = Math.max(0, Math.floor(sec));
     var update = function () {
       if (sec > 0) sec -= 1;
       var h = Math.floor(sec / 3600);
@@ -1311,11 +1313,13 @@
   function runWidgetFlow(shop, productId, productTags, content, skeleton) {
     var country = savedCountry();
     var productCollections = content.getAttribute("data-product-collections") || "";
+    var inventoryStatus = content.getAttribute("data-inventory-status") || "";
     var params = new URLSearchParams({
       shop: text(shop),
       product_id: text(productId),
       tags: text(productTags),
-      collections: text(productCollections)
+      collections: text(productCollections),
+      inventory_status: text(inventoryStatus)
     });
     if (country) params.set("country", country);
 
@@ -1329,7 +1333,7 @@
         hideSkeleton(skeleton);
         content.style.display = "block";
         renderWidget(payload, content);
-        startTimer(8100);
+        startTimer(payload.countdownSeconds);
       })
       .catch(function () {
         hideSkeleton(skeleton);

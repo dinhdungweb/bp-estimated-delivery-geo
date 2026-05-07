@@ -1,10 +1,19 @@
 import {
   DEFAULT_SHIPPING_MESSAGE,
+  type InventoryStatus,
   isAllCountriesCode,
+  normalizeCutoffTime,
+  normalizeDateLocale,
+  normalizeHolidayDates,
   normalizeCollectionIds,
   normalizeCountry,
   normalizeProductIds,
+  normalizeRuleInventoryStatus,
   normalizeTags,
+  normalizeTimerSeconds,
+  normalizeTimeZone,
+  normalizeVisibilityMode,
+  type VisibilityMode,
 } from "./delivery";
 
 export type RulePayload =
@@ -15,10 +24,18 @@ export type RulePayload =
       targetProducts: string[];
       targetCollections: string[];
       targetTags: string[];
+      inventoryStatus: InventoryStatus;
       minDays: number;
       maxDays: number;
       processingDays: number;
       shippingMessage: string;
+      cutoffEnabled: boolean;
+      cutoffTime: string;
+      cutoffTimezone: string;
+      holidayDates: string[];
+      visibilityMode: VisibilityMode;
+      timerSeconds: number;
+      dateLocale: string;
       isActive: boolean;
     }
   | { error: string };
@@ -369,10 +386,18 @@ export function readRulePayload(formData: FormData): RulePayload {
   const targetProducts = normalizeProductIds(csvList(formData.get("targetProducts")));
   const targetCollections = normalizeCollectionIds(csvList(formData.get("targetCollections")));
   const targetTags = normalizeTags(csvList(formData.get("targetTags")));
+  const inventoryStatus = normalizeRuleInventoryStatus(formData.get("inventoryStatus"));
   const minDays = parseNonNegativeInt(formData.get("minDays"), 3);
   const maxDays = parseNonNegativeInt(formData.get("maxDays"), 7);
   const processingDays = parseNonNegativeInt(formData.get("processingDays"), 1);
   const shippingMessage = String(formData.get("shippingMessage") || RULE_DEFAULT_MESSAGE).trim();
+  const cutoffEnabled = String(formData.get("cutoffEnabled") ?? "false") === "true";
+  const cutoffTime = normalizeCutoffTime(formData.get("cutoffTime"));
+  const cutoffTimezone = normalizeTimeZone(formData.get("cutoffTimezone"));
+  const holidayDates = normalizeHolidayDates(formData.get("holidayDates"));
+  const visibilityMode = normalizeVisibilityMode(formData.get("visibilityMode"));
+  const timerSeconds = normalizeTimerSeconds(formData.get("timerSeconds"));
+  const dateLocale = normalizeDateLocale(formData.get("dateLocale"));
   const isActive = String(formData.get("isActive") ?? "true") === "true";
 
   if (!isRuleCountryCode(countryCode)) {
@@ -406,10 +431,18 @@ export function readRulePayload(formData: FormData): RulePayload {
     targetProducts,
     targetCollections,
     targetTags,
+    inventoryStatus,
     minDays,
     maxDays,
     processingDays,
     shippingMessage,
+    cutoffEnabled,
+    cutoffTime,
+    cutoffTimezone,
+    holidayDates,
+    visibilityMode,
+    timerSeconds,
+    dateLocale,
     isActive,
   };
 }

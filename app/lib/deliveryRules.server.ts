@@ -3,8 +3,10 @@ import prisma from "../db.server";
 import {
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
+  type InventoryStatus,
   normalizeCollectionIds,
   normalizeProductIds,
+  normalizeRuleInventoryStatus,
   normalizeTags,
 } from "./delivery";
 import { jsonStringArray, sameStringArray } from "./deliveryRules";
@@ -73,6 +75,7 @@ export async function hasDuplicateDeliveryRule({
   targetProducts,
   targetCollections,
   targetTags,
+  inventoryStatus = "both",
 }: {
   shop: string;
   id?: string;
@@ -81,7 +84,9 @@ export async function hasDuplicateDeliveryRule({
   targetProducts: string[];
   targetCollections: string[];
   targetTags: string[];
+  inventoryStatus?: InventoryStatus;
 }) {
+  const normalizedInventoryStatus = normalizeRuleInventoryStatus(inventoryStatus);
   const possibleDuplicates = await prisma.deliveryRule.findMany({
     where: {
       shop,
@@ -95,7 +100,8 @@ export async function hasDuplicateDeliveryRule({
       sameStringArray(jsonStringArray(rule.targetCountries), targetCountries) &&
       sameStringArray(normalizeProductIds(jsonStringArray(rule.targetProducts)), targetProducts) &&
       sameStringArray(normalizeCollectionIds(jsonStringArray(rule.targetCollections)), targetCollections) &&
-      sameStringArray(normalizeTags(jsonStringArray(rule.targetTags)), targetTags)
+      sameStringArray(normalizeTags(jsonStringArray(rule.targetTags)), targetTags) &&
+      normalizeRuleInventoryStatus(rule.inventoryStatus) === normalizedInventoryStatus
     );
   });
 }

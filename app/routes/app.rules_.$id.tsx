@@ -32,13 +32,23 @@ import {
   ALL_COUNTRIES_CODE,
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
+  INVENTORY_STATUS_OPTIONS,
+  inventoryStatusLabel,
   isAllCountriesCode,
+  normalizeCutoffTime,
+  normalizeDateLocale,
+  normalizeHolidayDates,
   normalizeCollectionIds,
   normalizeCountries,
   normalizeCountry,
   normalizeProductIds,
+  normalizeRuleInventoryStatus,
   normalizeTags,
+  normalizeTimeZone,
+  normalizeVisibilityMode,
+  OPERATIONAL_TIMEZONES,
   parseBlockConfigs,
+  VISIBILITY_MODE_OPTIONS,
 } from "../lib/delivery";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import {
@@ -79,10 +89,18 @@ type RuleEditorRule = {
   targetProducts: unknown;
   targetCollections: unknown;
   targetTags: unknown;
+  inventoryStatus: string;
   minDays: number;
   maxDays: number;
   processingDays: number;
   shippingMessage: string;
+  cutoffEnabled: boolean;
+  cutoffTime: string;
+  cutoffTimezone: string;
+  holidayDates: unknown;
+  visibilityMode: string;
+  timerSeconds: number;
+  dateLocale: string;
   isActive: boolean;
 };
 
@@ -122,6 +140,7 @@ type ShopifyAdminGlobal = {
 };
 
 type TargetMode = "product" | "collection" | "tag";
+type OperationalTab = "timing" | "cutoff" | "holidays" | "visibility";
 
 type TargetResource = {
   id: string;
@@ -484,9 +503,13 @@ const BUTTON_BASE =
   "inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60";
 const BUTTON_PRIMARY = `${BUTTON_BASE} bg-gray-900 text-white shadow-md shadow-gray-200 hover:bg-black`;
 const BUTTON_SECONDARY = `${BUTTON_BASE} border border-gray-200 bg-white text-gray-700 hover:bg-gray-50`;
-const BUTTON_CHIP =
-  "inline-flex h-9 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 text-center text-xs font-bold text-gray-700 transition-all hover:bg-gray-50 active:scale-95";
 const TARGET_LIST_PAGE_SIZE = 10;
+const OPERATIONAL_TABS: Array<{ id: OperationalTab; label: string }> = [
+  { id: "timing", label: "Timing" },
+  { id: "cutoff", label: "Cut-off time" },
+  { id: "holidays", label: "Holidays" },
+  { id: "visibility", label: "Visibility" },
+];
 
 function SelectedTargetList({
   items,
@@ -885,10 +908,18 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
             targetProducts: true,
             targetCollections: true,
             targetTags: true,
+            inventoryStatus: true,
             minDays: true,
             maxDays: true,
             processingDays: true,
             shippingMessage: true,
+            cutoffEnabled: true,
+            cutoffTime: true,
+            cutoffTimezone: true,
+            holidayDates: true,
+            visibilityMode: true,
+            timerSeconds: true,
+            dateLocale: true,
             isActive: true,
           },
         }),
@@ -1082,6 +1113,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         targetProducts: payload.targetProducts,
         targetCollections: payload.targetCollections,
         targetTags: payload.targetTags,
+        inventoryStatus: payload.inventoryStatus,
       }),
     ),
   );
@@ -1096,10 +1128,18 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     targetProducts: payload.targetProducts as Prisma.InputJsonValue,
     targetCollections: payload.targetCollections as Prisma.InputJsonValue,
     targetTags: payload.targetTags as Prisma.InputJsonValue,
+    inventoryStatus: payload.inventoryStatus,
     minDays: payload.minDays,
     maxDays: payload.maxDays,
     processingDays: payload.processingDays,
     shippingMessage: payload.shippingMessage,
+    cutoffEnabled: payload.cutoffEnabled,
+    cutoffTime: payload.cutoffTime,
+    cutoffTimezone: payload.cutoffTimezone,
+    holidayDates: payload.holidayDates as Prisma.InputJsonValue,
+    visibilityMode: payload.visibilityMode,
+    timerSeconds: payload.timerSeconds,
+    dateLocale: payload.dateLocale,
     isActive: payload.isActive,
   };
 
@@ -1216,10 +1256,21 @@ export default function RuleEditorPage() {
     if (normalizeTags(jsonStringArray(initialRule?.targetTags)).length > 0) return "tag";
     return "product";
   });
+  const [inventoryStatus, setInventoryStatus] = useState(() =>
+    normalizeRuleInventoryStatus(initialRule?.inventoryStatus),
+  );
   const [minDays, setMinDays] = useState(String(initialRule?.minDays ?? 3));
   const [maxDays, setMaxDays] = useState(String(initialRule?.maxDays ?? 7));
   const [processingDays, setProcessingDays] = useState(String(initialRule?.processingDays ?? 1));
   const [shippingMessage, setShippingMessage] = useState(initialRule?.shippingMessage || RULE_DEFAULT_MESSAGE);
+  const [activeOperationalTab, setActiveOperationalTab] = useState<OperationalTab>("timing");
+  const [cutoffTime, setCutoffTime] = useState(() => normalizeCutoffTime(initialRule?.cutoffTime));
+  const [cutoffTimezone, setCutoffTimezone] = useState(() => normalizeTimeZone(initialRule?.cutoffTimezone));
+  const [holidayDates, setHolidayDates] = useState(() =>
+    normalizeHolidayDates(initialRule?.holidayDates).join("\n"),
+  );
+  const [visibilityMode, setVisibilityMode] = useState(() => normalizeVisibilityMode(initialRule?.visibilityMode));
+  const [dateLocale, setDateLocale] = useState(() => normalizeDateLocale(initialRule?.dateLocale));
   const [isActive, setIsActive] = useState(initialRule?.isActive ?? true);
   const [targetPickerError, setTargetPickerError] = useState("");
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -1321,10 +1372,17 @@ export default function RuleEditorPage() {
     formData.append("targetProducts", targetMode === "product" ? targetProducts : "");
     formData.append("targetCollections", targetMode === "collection" ? targetCollections : "");
     formData.append("targetTags", targetMode === "tag" ? targetTags : "");
+    formData.append("inventoryStatus", inventoryStatus);
     formData.append("minDays", minDays);
     formData.append("maxDays", maxDays);
     formData.append("processingDays", processingDays);
     formData.append("shippingMessage", shippingMessage);
+    formData.append("cutoffEnabled", "true");
+    formData.append("cutoffTime", cutoffTime);
+    formData.append("cutoffTimezone", cutoffTimezone);
+    formData.append("holidayDates", holidayDates);
+    formData.append("visibilityMode", visibilityMode);
+    formData.append("dateLocale", dateLocale);
     formData.append("isActive", String(isActive));
     submit(formData, { method: "post" });
   };
@@ -1630,6 +1688,66 @@ export default function RuleEditorPage() {
               </div>
             </div>
 
+            <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 p-6">
+                <div className="space-y-1">
+                  <h2 className="text-base font-bold text-gray-800">Visual Experience</h2>
+                  <p className="text-xs text-gray-400">Preview and modify the delivery widget design used by this rule.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTemplateModalOpen(true)}
+                    className={`${BUTTON_SECONDARY} gap-2 whitespace-nowrap`}
+                  >
+                    <span className="h-4 w-4 text-gray-400"><Icon source={WandIcon} /></span>
+                    Templates
+                  </button>
+                  {selectedWidget && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(customizeUrl)}
+                      className={`${BUTTON_PRIMARY} gap-2 whitespace-nowrap`}
+                    >
+                      <span className="h-4 w-4 text-white"><Icon source={EditIcon} /></span>
+                      Customize
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-4 p-6">
+                {selectedWidget && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Current design</p>
+                        <p className="text-sm font-bold text-gray-900">{selectedWidget.name}</p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {selectedWidget.isDefault ? "Default storefront design" : "Saved My design"}
+                        </p>
+                      </div>
+                      <Badge tone={selectedWidget.isActive ? "success" : "attention"}>
+                        {selectedWidget.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+                    <div className="relative flex min-h-[300px] items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/50 p-6">
+                      <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px] opacity-20" />
+                      <div className="relative z-10 w-full">
+                        <WidgetPreviewRenderer
+                          settings={{
+                            ...selectedWidget,
+                            style: "custom",
+                            customBlocks: parseBlockConfigs(selectedWidget.customBlocks),
+                            isActive: true,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
               <div className="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 p-6 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-1">
@@ -1818,129 +1936,167 @@ export default function RuleEditorPage() {
               </div>
             </div>
 
-            <div className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 p-6">
-                <div className="space-y-1">
-                  <h2 className="text-base font-bold text-gray-800">Visual Experience</h2>
-                  <p className="text-xs text-gray-400">Preview and modify the delivery widget design used by this rule.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTemplateModalOpen(true)}
-                    className={`${BUTTON_SECONDARY} gap-2 whitespace-nowrap`}
-                  >
-                    <span className="h-4 w-4 text-gray-400"><Icon source={WandIcon} /></span>
-                    Templates
-                  </button>
-                  {selectedWidget && (
-                    <button
-                      type="button"
-                      onClick={() => navigate(customizeUrl)}
-                      className={`${BUTTON_PRIMARY} gap-2 whitespace-nowrap`}
-                    >
-                      <span className="h-4 w-4 text-white"><Icon source={EditIcon} /></span>
-                      Customize
-                    </button>
-                  )}
-                </div>
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 bg-gray-50 p-6">
+                <h2 className="text-base font-bold text-gray-800">Inventory</h2>
+                <p className="mt-1 text-xs text-gray-400">
+                  ETA can be set based on stock status, such as in-stock, out-of-stock, or both.
+                </p>
               </div>
               <div className="space-y-4 p-6">
-                {selectedWidget && (
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Current design</p>
-                        <p className="text-sm font-bold text-gray-900">{selectedWidget.name}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {selectedWidget.isDefault ? "Default storefront design" : "Saved My design"}
-                        </p>
-                      </div>
-                      <Badge tone={selectedWidget.isActive ? "success" : "attention"}>
-                        {selectedWidget.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                    <div className="relative flex min-h-[300px] items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/50 p-6">
-                      <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px] opacity-20" />
-                      <div className="relative z-10 w-full">
-                        <WidgetPreviewRenderer
-                          settings={{
-                            ...selectedWidget,
-                            style: "custom",
-                            customBlocks: parseBlockConfigs(selectedWidget.customBlocks),
-                            isActive: true,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <p className="text-sm font-semibold text-gray-800">Select option</p>
+                <div className="space-y-3">
+                  {INVENTORY_STATUS_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="grid cursor-pointer grid-cols-[1.25rem_1fr] gap-3 rounded-xl px-1 py-1.5 text-sm text-gray-700"
+                    >
+                      <input
+                        type="radio"
+                        name="inventoryStatus"
+                        checked={inventoryStatus === option.value}
+                        onChange={() => setInventoryStatus(option.value)}
+                        className="mt-0.5 h-4 w-4 border-gray-300 text-gray-900 focus:ring-gray-900"
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-gray-900">{option.label}</span>
+                        <span className="mt-1 block leading-5 text-gray-500">{option.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
               <div className="border-b border-gray-100 bg-gray-50 p-6">
-                <h2 className="text-base font-bold text-gray-800">Delivery timing and message</h2>
+                <h2 className="text-base font-bold text-gray-800">Delivery timing, message, and logic</h2>
                 <p className="mt-1 text-xs text-gray-400">
-                  Configure the ETA math and storefront text for this rule.
+                  Configure ETA dates, storefront text, cut-off rules, holidays, and visibility.
                 </p>
+                <div className="mt-4 grid w-full gap-2 rounded-2xl border border-gray-100 bg-white p-1 md:grid-cols-4">
+                  {OPERATIONAL_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveOperationalTab(tab.id)}
+                      className={`h-9 rounded-xl px-3 text-xs font-bold transition-all ${
+                        activeOperationalTab === tab.id
+                          ? "bg-gray-900 text-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-950"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="space-y-4 p-6">
-                <FormLayout.Group>
-                  <TextField
-                    label="Min delivery days"
-                    type="number"
-                    value={minDays}
-                    onChange={setMinDays}
-                    min={0}
-                    autoComplete="off"
-                    helpText="Earliest delivery date after processing."
-                  />
-                  <TextField
-                    label="Max delivery days"
-                    type="number"
-                    value={maxDays}
-                    onChange={setMaxDays}
-                    min={0}
-                    autoComplete="off"
-                    helpText="Latest delivery date after processing."
-                  />
-                </FormLayout.Group>
-                <TextField
-                  label="Processing days"
-                  type="number"
-                  value={processingDays}
-                  onChange={setProcessingDays}
-                  min={0}
-                  autoComplete="off"
-                  helpText="Days needed before the order is ready to ship."
-                />
-                <TextField
-                  label="Storefront message"
-                  value={shippingMessage}
-                  onChange={setShippingMessage}
-                  autoComplete="off"
-                  multiline={3}
-                  helpText="Supported placeholders: {order_date}, {ship_date}, {min_date}, {max_date}."
-                />
-              </div>
-            </div>
+                {activeOperationalTab === "timing" && (
+                  <>
+                    <FormLayout.Group>
+                      <TextField
+                        label="Min delivery days"
+                        type="number"
+                        value={minDays}
+                        onChange={setMinDays}
+                        min={0}
+                        autoComplete="off"
+                        helpText="Earliest delivery date after processing."
+                      />
+                      <TextField
+                        label="Max delivery days"
+                        type="number"
+                        value={maxDays}
+                        onChange={setMaxDays}
+                        min={0}
+                        autoComplete="off"
+                        helpText="Latest delivery date after processing."
+                      />
+                    </FormLayout.Group>
+                    <TextField
+                      label="Processing days"
+                      type="number"
+                      value={processingDays}
+                      onChange={setProcessingDays}
+                      min={0}
+                      autoComplete="off"
+                      helpText="Days needed before the order is ready to ship."
+                    />
+                    <TextField
+                      label="Storefront message"
+                      value={shippingMessage}
+                      onChange={setShippingMessage}
+                      autoComplete="off"
+                      multiline={3}
+                      helpText="Supported placeholders: {order_date}, {ship_date}, {min_date}, {max_date}."
+                    />
+                  </>
+                )}
 
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 p-6">
-                <h2 className="text-sm font-bold text-gray-800">Operational Logic</h2>
-                <Badge tone="info">Core Engine</Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-3 p-6 md:grid-cols-3 lg:grid-cols-5">
-                {["Cut-off time", "Holidays", "Visibility", "Timer", "Language"].map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className={BUTTON_CHIP}
-                  >
-                    {label}
-                  </button>
-                ))}
+                {activeOperationalTab === "cutoff" && (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-sky-100 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
+                      Orders after this time start ETA calculation from the next business day. Countdown blocks use this cut-off automatically.
+                    </div>
+                    <FormLayout.Group>
+                      <TextField
+                        label="Cut-off time"
+                        type="time"
+                        value={cutoffTime}
+                        onChange={setCutoffTime}
+                        autoComplete="off"
+                      />
+                      <div>
+                        <label className="mb-1 block text-sm text-gray-900">Timezone</label>
+                        <select
+                          value={cutoffTimezone}
+                          onChange={(event) => setCutoffTimezone(event.currentTarget.value)}
+                          className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                        >
+                          {OPERATIONAL_TIMEZONES.map((timeZone) => (
+                            <option key={timeZone} value={timeZone}>{timeZone}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </FormLayout.Group>
+                  </div>
+                )}
+
+                {activeOperationalTab === "holidays" && (
+                  <TextField
+                    label="Holiday dates"
+                    value={holidayDates}
+                    onChange={setHolidayDates}
+                    autoComplete="off"
+                    multiline={4}
+                    placeholder={"2026-01-01\n2026-12-25"}
+                    helpText="One date per line. These dates are skipped when calculating ship and delivery dates."
+                  />
+                )}
+
+                {activeOperationalTab === "visibility" && (
+                  <div className="space-y-3">
+                    {VISIBILITY_MODE_OPTIONS.map((option) => (
+                      <label
+                        key={option.value}
+                        className="grid cursor-pointer grid-cols-[1.25rem_1fr] gap-3 rounded-xl px-1 py-1.5 text-sm text-gray-700"
+                      >
+                        <input
+                          type="radio"
+                          checked={visibilityMode === option.value}
+                          onChange={() => setVisibilityMode(option.value)}
+                          className="mt-0.5 h-4 w-4 border-gray-300 text-gray-900 focus:ring-gray-900"
+                        />
+                        <span className="font-semibold text-gray-900">{option.label}</span>
+                      </label>
+                    ))}
+                    <p className="text-xs leading-5 text-gray-500">
+                      Hidden rules still match their target, then suppress the storefront widget for that traffic.
+                    </p>
+                  </div>
+                )}
+
               </div>
             </div>
 
@@ -2032,6 +2188,12 @@ export default function RuleEditorPage() {
                   <span className="text-gray-500">Countries</span>
                   <span className="text-right font-bold text-gray-900">
                     {countrySelectionLabel(selectedCountryCodes, countryCode)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Inventory</span>
+                  <span className="text-right font-bold text-gray-900">
+                    {inventoryStatusLabel(inventoryStatus)}
                   </span>
                 </div>
                 <div className="flex justify-between gap-3">

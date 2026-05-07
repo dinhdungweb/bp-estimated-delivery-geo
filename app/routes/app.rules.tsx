@@ -18,7 +18,13 @@ import { DeleteIcon, EditIcon, InfoIcon } from "@shopify/polaris-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { isAllCountriesCode, normalizeCollectionIds, normalizeProductIds, normalizeTags } from "../lib/delivery";
+import {
+  inventoryStatusLabel,
+  isAllCountriesCode,
+  normalizeCollectionIds,
+  normalizeProductIds,
+  normalizeTags,
+} from "../lib/delivery";
 import {
   daysLabel,
   getRuleCountryLabel,
@@ -40,6 +46,7 @@ type RuleRow = {
   targetProducts: unknown;
   targetCollections: unknown;
   targetTags: unknown;
+  inventoryStatus: string;
   minDays: number;
   maxDays: number;
   processingDays: number;
@@ -418,7 +425,8 @@ export default function RulesPage() {
           <div className="p-5">
             <p className="max-w-4xl text-sm leading-6 text-gray-500">
               The storefront matches product rules first, then collection rules, then tag rules,
-              then country rules, and finally any All countries rule. Each rule renders the design selected for that rule.
+              then country rules, and finally any All countries rule. Within each targeting level,
+              inventory-specific rules are preferred over Both when the product stock status matches.
             </p>
           </div>
         </div>
@@ -620,6 +628,7 @@ export default function RulesPage() {
                             <div className="space-y-1 text-xs text-gray-500">
                               <p className="font-semibold text-gray-700">{targeting.label}</p>
                               <p className="max-w-[260px] truncate">{targeting.value}</p>
+                              <p className="text-gray-400">Inventory: {inventoryStatusLabel(rule.inventoryStatus)}</p>
                             </div>
                           </td>
                           <td className="px-5 py-4">
