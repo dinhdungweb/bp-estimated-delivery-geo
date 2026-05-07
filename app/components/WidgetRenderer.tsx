@@ -280,12 +280,14 @@ const PREVIEW_DATA = {
   minDate: "Jan 13",
   maxDate: "Jan 15",
   countdown: "02:14:59",
+  countryCode: "US",
+  countryName: "United States",
 };
 
 export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsProps }) {
   const {
     customBlocks, blocks: legacyBlocks, textColor, iconColor, bgColor, borderColor, borderRadius,
-    shadow, glassmorphism, padding = 16, bgGradient
+    shadow, glassmorphism, padding = 16, bgGradient, showLocationSelector = true
   } = settings;
 
   const blocks =
@@ -304,9 +306,35 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       .replace(/{min_date}/g, minDate)
       .replace(/{max_date}/g, maxDate)
       .replace(/{countdown}/g, countdown)
-      .replace(/{COUNTRY_NAME}/g, "Vietnam")
-      .replace(/{COUNTRY_FLAG}/g, "VN");
+      .replace(/{COUNTRY_NAME}/g, PREVIEW_DATA.countryName)
+      .replace(/{COUNTRY_FLAG}/g, PREVIEW_DATA.countryCode);
   };
+
+  const renderLocationControl = () => (
+    <div
+      className="bp-location-row"
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        marginTop: "8px",
+      }}
+    >
+      <button type="button" className="bp-change-link" aria-label="Preview delivery country">
+        <span className="bp-country-flag">
+          <img
+            className="bp-country-flag-img"
+            src={`https://flagcdn.com/${PREVIEW_DATA.countryCode.toLowerCase()}.svg`}
+            alt={`${PREVIEW_DATA.countryName} flag`}
+            loading="lazy"
+          />
+        </span>
+        <span className="bp-country-link-text">
+          <span className="bp-country-link-prefix">Delivery to</span>
+          <span className="bp-country-link-country">{PREVIEW_DATA.countryName}</span>
+        </span>
+      </button>
+    </div>
+  );
 
   const blockIconColor = (s: any) => s.iconColor || s.blockIconColor || iconColor;
 
@@ -660,6 +688,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       <div className="bp-container">
         {blocks.map(render_custom_block)}
       </div>
+      {showLocationSelector !== false && renderLocationControl()}
     </div>
   );
 }

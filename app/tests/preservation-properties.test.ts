@@ -83,6 +83,7 @@ interface APIDeliveryResponse {
     padding?: number;
     bgGradient?: string;
     showTimeline?: boolean;
+    showLocationSelector?: boolean;
     policyText?: string;
   };
 }
@@ -559,6 +560,7 @@ describe('Preservation Properties: Non-Visual Functionality', () => {
         padding: 16,
         bgGradient: undefined,
         showTimeline: true,
+        showLocationSelector: true,
         policyText: undefined,
       };
 

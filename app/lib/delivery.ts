@@ -134,6 +134,7 @@ export interface WidgetSettingsProps {
   padding?: number | null;
   bgGradient?: string | null;
   showTimeline?: boolean;
+  showLocationSelector?: boolean;
   policyText?: string | null;
 }
 

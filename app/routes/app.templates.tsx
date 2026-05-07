@@ -71,6 +71,7 @@ function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templa
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const appSetting = await prisma.appSetting.findUnique({ where: { shop: session.shop } });
   const widgets = await prisma.widget.findMany({
     where: { shop: session.shop, isDefault: false },
     orderBy: [{ updatedAt: "desc" }],
@@ -108,6 +109,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   return routerData({
+    showLocationSelector: appSetting?.showLocationSelector ?? true,
     widgets: widgets.map((widget) => ({
       ...widget,
       updatedAt: widget.updatedAt.toISOString(),
@@ -451,10 +453,12 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
 
 function TemplateCard({
   template,
+  showLocationSelector,
   isSubmitting,
   onUseTemplate,
 }: {
   template: TemplateMeta;
+  showLocationSelector: boolean;
   isSubmitting: boolean;
   onUseTemplate: (template: TemplateMeta) => void;
 }) {
@@ -464,7 +468,7 @@ function TemplateCard({
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="p-4">
         <div className="rounded-xl bg-gray-50 p-2">
-          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none" }} />
+          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none", showLocationSelector }} />
         </div>
       </div>
 
@@ -520,11 +524,13 @@ function widgetPreviewSettings(widget: SavedWidget): WidgetSettingsProps {
 
 function MyDesignCard({
   widget,
+  showLocationSelector,
   isSubmitting,
   onCustomize,
   onUseDesign,
 }: {
   widget: SavedWidget;
+  showLocationSelector: boolean;
   isSubmitting: boolean;
   onCustomize: (widgetId: string) => void;
   onUseDesign: (widget: SavedWidget) => void;
@@ -539,7 +545,7 @@ function MyDesignCard({
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="p-4">
         <div className="rounded-xl bg-gray-50 p-2">
-          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none" }} />
+          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none", showLocationSelector }} />
         </div>
       </div>
 
@@ -613,7 +619,7 @@ function NewDesignCard({
 }
 
 export default function TemplateBuilder() {
-  const { widgets } = useLoaderData<typeof loader>();
+  const { widgets, showLocationSelector } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -736,6 +742,7 @@ export default function TemplateBuilder() {
               <TemplateCard
                 key={template.style}
                 template={template}
+                showLocationSelector={showLocationSelector}
                 isSubmitting={isSubmitting && pendingStyle === template.style}
                 onUseTemplate={handleUseTemplate}
               />
@@ -748,6 +755,7 @@ export default function TemplateBuilder() {
               <MyDesignCard
                 key={widget.id}
                 widget={widget}
+                showLocationSelector={showLocationSelector}
                 isSubmitting={isSubmitting && navigation.formData?.get("widgetId") === widget.id}
                 onCustomize={(widgetId) => navigate(`/app/widgets/${widgetId}`)}
                 onUseDesign={handleUseSavedDesign}

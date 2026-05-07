@@ -104,6 +104,7 @@ model AppSetting {
   padding       Int?     @default(0)
   bgGradient    String?
   showTimeline  Boolean  @default(true)
+  showLocationSelector Boolean @default(true)
   policyText    String?  @db.Text
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

@@ -21,6 +21,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return data({
     isEnabled: setting.isEnabled,
+    showLocationSelector: setting.showLocationSelector,
     shop: session.shop,
     totalRules,
     activeRules,
@@ -32,22 +33,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
-  if (intent !== "set-global-enabled") {
+  if (intent !== "set-global-enabled" && intent !== "set-location-selector") {
     return data({ error: "Unknown intent." }, { status: 400 });
   }
 
-  const isEnabled = formData.get("isEnabled") === "true";
   await ensureAppSetting(session.shop);
-  await prisma.appSetting.update({
-    where: { shop: session.shop },
-    data: { isEnabled },
-  });
+
+  if (intent === "set-global-enabled") {
+    const isEnabled = formData.get("isEnabled") === "true";
+    await prisma.appSetting.update({
+      where: { shop: session.shop },
+      data: { isEnabled },
+    });
+  }
+
+  if (intent === "set-location-selector") {
+    const showLocationSelector = formData.get("showLocationSelector") === "true";
+    await prisma.appSetting.update({
+      where: { shop: session.shop },
+      data: { showLocationSelector },
+    });
+  }
 
   return data({ success: true });
 };
 
 export default function AppSettingsPage() {
-  const { isEnabled, shop, totalRules, activeRules } = useLoaderData<typeof loader>();
+  const { isEnabled, showLocationSelector, shop, totalRules, activeRules } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -59,6 +71,16 @@ export default function AppSettingsPage() {
       {
         intent: "set-global-enabled",
         isEnabled: String(nextEnabled),
+      },
+      { method: "post" },
+    );
+  };
+
+  const updateLocationSelector = (nextVisible: boolean) => {
+    submit(
+      {
+        intent: "set-location-selector",
+        showLocationSelector: String(nextVisible),
       },
       { method: "post" },
     );
@@ -83,6 +105,7 @@ export default function AppSettingsPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+          <div className="space-y-4">
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
             <div className="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 p-6 md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
@@ -139,6 +162,42 @@ export default function AppSettingsPage() {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 p-6 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <h2 className="text-base font-bold text-gray-800">Delivery Location Row</h2>
+                <p className="text-sm text-gray-500">
+                  Show or hide the flag and country selector below every storefront delivery widget.
+                </p>
+              </div>
+              <Badge tone={showLocationSelector ? "success" : "attention"}>
+                {showLocationSelector ? "Shown globally" : "Hidden globally"}
+              </Badge>
+            </div>
+            <div className="space-y-5 p-6">
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <p className="text-sm font-semibold text-gray-800">
+                  {showLocationSelector
+                    ? "All widgets can show the customer delivery country."
+                    : "All widgets hide the delivery country row."}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  The app still detects country for rule matching and ETA calculation even when this row is hidden.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => updateLocationSelector(!showLocationSelector)}
+                disabled={isSubmitting}
+                className={showLocationSelector ? BUTTON_SECONDARY : BUTTON_PRIMARY}
+              >
+                {showLocationSelector ? "Hide delivery location row" : "Show delivery location row"}
+              </button>
+            </div>
+          </div>
           </div>
 
           <div className="space-y-4">

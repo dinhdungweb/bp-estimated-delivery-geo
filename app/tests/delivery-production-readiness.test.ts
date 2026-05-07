@@ -605,6 +605,103 @@ describe("storefront embed sanitization", () => {
     expect(window.localStorage.getItem("bpDeliveryCountry")).toBe("US");
   });
 
+  it("uses the detected country for the location selector and country placeholders", async () => {
+    document.body.innerHTML = `
+      <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="vip" style="display:none">
+        <div class="bp-skeleton"></div>
+      </div>
+    `;
+
+    const payload = {
+      enabled: true,
+      countryCode: "VN",
+      orderDate: "Jan 1",
+      shipDate: "Jan 2",
+      minDate: "Jan 3",
+      maxDate: "Jan 4",
+      shippingMessage: "Arrives {min_date} - {max_date}",
+      settings: {
+        customBlocks: [
+          {
+            id: "header",
+            type: "header",
+            settings: { text: "Free Shipping to {COUNTRY_FLAG} {COUNTRY_NAME}" },
+          },
+        ],
+      },
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => payload,
+    });
+    (window as unknown as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const script = fs.readFileSync(
+      path.join(process.cwd(), "extensions/bp-estimated-delivery/assets/bp-delivery-embed.js"),
+      "utf8",
+    );
+    window.eval(script);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const link = document.querySelector<HTMLButtonElement>(".bp-change-link");
+    expect(link?.textContent).toContain("Vietnam");
+    expect(link?.querySelector("img")?.getAttribute("src")).toContain("flagcdn.com/vn.svg");
+    expect(document.body.textContent).toContain("Vietnam");
+    expect(document.querySelector(".bp-text-label img")?.getAttribute("src")).toContain(
+      "flagcdn.com/vn.svg",
+    );
+
+    link?.click();
+    const select = document.getElementById("bp-delivery-embed-country-select") as HTMLSelectElement;
+    expect(select.value).toBe("VN");
+    expect(document.getElementById("bp-delivery-country-select-flag")).toBeNull();
+    expect(select.options.length).toBeGreaterThan(200);
+    expect(Array.from(select.options).some((option) => option.value === "AD")).toBe(true);
+    expect(Array.from(select.options).some((option) => option.textContent?.includes("Vietnam"))).toBe(
+      true,
+    );
+  });
+
+  it("hides the location selector when the widget setting is disabled", async () => {
+    document.body.innerHTML = `
+      <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="vip" style="display:none">
+        <div class="bp-skeleton"></div>
+      </div>
+    `;
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        enabled: true,
+        countryCode: "US",
+        orderDate: "Jan 1",
+        shipDate: "Jan 2",
+        minDate: "Jan 3",
+        maxDate: "Jan 4",
+        shippingMessage: "Arrives {min_date} - {max_date}",
+        settings: {
+          showLocationSelector: false,
+          customBlocks: [
+            {
+              id: "header",
+              type: "header",
+              settings: { text: "Arrives {min_date} - {max_date}" },
+            },
+          ],
+        },
+      }),
+    });
+    (window as unknown as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const script = fs.readFileSync(
+      path.join(process.cwd(), "extensions/bp-estimated-delivery/assets/bp-delivery-embed.js"),
+      "utf8",
+    );
+    window.eval(script);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector(".bp-change-link")).toBeNull();
+  });
+
   it("prefers the explicit app block when both app embed and app block are present", async () => {
     document.body.innerHTML = `
       <div id="bp-delivery-embed-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="" style="display:none">

@@ -887,7 +887,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const routeId = params.id;
   const isNew = isNewRuleId(routeId);
   const requestedWidgetId = url.searchParams.get("selectedWidgetId") || "";
-  const [defaultWidget] = await Promise.all([
+  const [defaultWidget, appSetting] = await Promise.all([
     ensureDefaultWidget(session.shop),
     ensureAppSetting(session.shop),
   ]);
@@ -958,6 +958,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         updatedAt: widget.updatedAt.toISOString(),
     })),
     shop: session.shop,
+    showLocationSelector: appSetting.showLocationSelector,
     defaultWidgetId: rule?.widgetId || selectedWidgetId || defaultWidget.id,
     templateApplied: url.searchParams.get("templateApplied") === "1",
     sourceDesignId: url.searchParams.get("sourceDesignId") || "",
@@ -1203,6 +1204,7 @@ export default function RuleEditorPage() {
     widgets,
     savedWidgets,
     shop,
+    showLocationSelector,
     defaultWidgetId,
     templateApplied,
     sourceDesignId,
@@ -1738,6 +1740,7 @@ export default function RuleEditorPage() {
                             ...selectedWidget,
                             style: "custom",
                             customBlocks: parseBlockConfigs(selectedWidget.customBlocks),
+                            showLocationSelector,
                             isActive: true,
                           }}
                         />
@@ -2169,6 +2172,7 @@ export default function RuleEditorPage() {
                           ...selectedWidget,
                           style: "custom",
                           customBlocks: parseBlockConfigs(selectedWidget.customBlocks),
+                          showLocationSelector,
                           isActive: true,
                         }}
                       />

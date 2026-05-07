@@ -184,10 +184,103 @@
   var SHADOWS = { none: true, sm: true, md: true, lg: true, xl: true, premium: true };
   var ICON_PATH = /^\/icons\/(?:delivery|ordered|shipped)\/[a-z0-9-]+\.png$/i;
   var COUNTRY_STORAGE_KEY = "bpDeliveryCountry";
+  var FLAG_CDN_BASE = "https://flagcdn.com/";
+  var COUNTRY_OPTIONS = [
+    "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AR", "AS", "AT", "AU", "AW", "AX", "AZ", "BA",
+    "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT",
+    "BW", "BY", "BZ", "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR",
+    "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO", "DZ", "EC", "EE", "EG", "ER",
+    "ES", "ET", "FI", "FJ", "FK", "FM", "FO", "FR", "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI",
+    "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK", "HN", "HR", "HT", "HU",
+    "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT", "JE", "JM", "JO", "JP", "KE", "KG",
+    "KH", "KI", "KM", "KN", "KR", "KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT",
+    "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP",
+    "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ", "NA", "NC", "NE", "NG", "NI", "NL",
+    "NO", "NP", "NR", "NU", "NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR",
+    "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU", "RW", "SA", "SB", "SC", "SD", "SE", "SG",
+    "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TC",
+    "TD", "TG", "TH", "TJ", "TK", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA", "UG", "US",
+    "UY", "UZ", "VA", "VC", "VE", "VG", "VI", "VN", "VU", "WF", "WS", "YE", "YT", "ZA", "ZM", "ZW",
+    "ALL"
+  ];
+  var COUNTRY_NAMES = {
+    ALL: "All countries",
+    AU: "Australia",
+    US: "United States",
+    GB: "United Kingdom",
+    CA: "Canada",
+    NZ: "New Zealand",
+    VN: "Vietnam",
+    SG: "Singapore",
+    MY: "Malaysia",
+    TH: "Thailand",
+    ID: "Indonesia",
+    PH: "Philippines",
+    JP: "Japan",
+    KR: "South Korea",
+    CN: "China",
+    HK: "Hong Kong",
+    IN: "India",
+    AE: "United Arab Emirates",
+    SA: "Saudi Arabia",
+    FR: "France",
+    DE: "Germany",
+    NL: "Netherlands",
+    IT: "Italy",
+    ES: "Spain",
+    SE: "Sweden",
+    NO: "Norway",
+    DK: "Denmark",
+    CH: "Switzerland",
+    IE: "Ireland",
+    BE: "Belgium",
+    AT: "Austria",
+    PL: "Poland",
+    BR: "Brazil",
+    MX: "Mexico",
+    ZA: "South Africa"
+  };
+  var COUNTRY_CURRENCIES = {
+    AU: "AUD",
+    US: "USD",
+    GB: "GBP",
+    CA: "CAD",
+    NZ: "NZD",
+    VN: "VND",
+    SG: "SGD",
+    MY: "MYR",
+    TH: "THB",
+    ID: "IDR",
+    PH: "PHP",
+    JP: "JPY",
+    KR: "KRW",
+    CN: "CNY",
+    HK: "HKD",
+    IN: "INR",
+    AE: "AED",
+    SA: "SAR",
+    FR: "EUR",
+    DE: "EUR",
+    NL: "EUR",
+    IT: "EUR",
+    ES: "EUR",
+    SE: "SEK",
+    NO: "NOK",
+    DK: "DKK",
+    CH: "CHF",
+    IE: "EUR",
+    BE: "EUR",
+    AT: "EUR",
+    PL: "PLN",
+    BR: "BRL",
+    MX: "MXN",
+    ZA: "ZAR"
+  };
   var currentCountdown = "00:00:00";
   var countdownTimerId = null;
   var addToCartTrackingAttached = false;
   var lastTrackingContext = null;
+  var lastResolvedCountry = "";
 
   function text(value, fallback) {
     if (value === undefined || value === null) return fallback || "";
@@ -252,6 +345,126 @@
     return "";
   }
 
+  function countryDisplayName(value) {
+    var country = normalizeCountry(value);
+    if (!country) return "";
+    if (COUNTRY_NAMES[country]) return COUNTRY_NAMES[country];
+    try {
+      var locale =
+        (document.documentElement && document.documentElement.lang) ||
+        (typeof navigator !== "undefined" && navigator.language) ||
+        "en";
+      if (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function") {
+        var displayNames = new Intl.DisplayNames([locale], { type: "region" });
+        return displayNames.of(country) || country;
+      }
+    } catch (_error) {}
+    return country;
+  }
+
+  function countryFlag(value) {
+    var country = normalizeCountry(value);
+    if (!country) return "";
+    if (country === "ALL") return String.fromCodePoint(0x1F30D);
+    return String.fromCodePoint(
+      0x1F1E6 + country.charCodeAt(0) - 65,
+      0x1F1E6 + country.charCodeAt(1) - 65
+    );
+  }
+
+  function countryFlagUrl(value) {
+    var country = normalizeCountry(value);
+    if (!country || country === "ALL") return "";
+    return FLAG_CDN_BASE + country.toLowerCase() + ".svg";
+  }
+
+  function createCountryFlagNode(value) {
+    var country = normalizeCountry(value);
+    if (!country) return null;
+    var flag = el("span", "bp-country-flag");
+    if (country === "ALL") {
+      flag.className += " bp-country-flag-globe";
+      flag.textContent = countryFlag(country);
+      flag.setAttribute("aria-label", "Worldwide");
+      return flag;
+    }
+    var image = document.createElement("img");
+    image.className = "bp-country-flag-img";
+    image.src = countryFlagUrl(country);
+    image.alt = countryDisplayName(country) + " flag";
+    image.loading = "lazy";
+    image.decoding = "async";
+    flag.appendChild(image);
+    return flag;
+  }
+
+  function countryOptionLabel(value) {
+    var country = normalizeCountry(value);
+    if (!country) return "Select country";
+    var currency = COUNTRY_CURRENCIES[country];
+    return country + " - " + countryDisplayName(country) + (currency ? " (" + currency + ")" : "");
+  }
+
+  function renderCountryLinkContent(button, value) {
+    var country = normalizeCountry(value);
+    button.replaceChildren();
+    if (!country) {
+      button.appendChild(document.createTextNode("Change shipping country"));
+      return;
+    }
+    if (country === "ALL") {
+      var globe = createCountryFlagNode(country);
+      if (globe) button.appendChild(globe);
+      var worldwideText = el("span", "bp-country-link-text");
+      worldwideText.textContent = "Worldwide delivery";
+      button.appendChild(worldwideText);
+      return;
+    }
+    var flag = createCountryFlagNode(country);
+    if (flag) button.appendChild(flag);
+    var label = el("span", "bp-country-link-text");
+    var prefix = el("span", "bp-country-link-prefix");
+    prefix.textContent = "Delivery to";
+    label.appendChild(prefix);
+    var countryName = el("span", "bp-country-link-country");
+    countryName.textContent = countryDisplayName(country);
+    label.appendChild(countryName);
+    button.appendChild(label);
+  }
+
+  function countryOptionCodes(selectedCountry) {
+    var selected = normalizeCountry(selectedCountry);
+    var options = COUNTRY_OPTIONS.slice();
+    if (selected && options.indexOf(selected) === -1) {
+      var allIndex = options.indexOf("ALL");
+      options.splice(allIndex >= 0 ? allIndex : options.length, 0, selected);
+    }
+    options.sort(function (a, b) {
+      if (a === "ALL") return 1;
+      if (b === "ALL") return -1;
+      return countryDisplayName(a).localeCompare(countryDisplayName(b));
+    });
+    return options;
+  }
+
+  function fillCountrySelect(select, selectedCountry) {
+    if (!select) return;
+    var selected = normalizeCountry(selectedCountry) || "ALL";
+    while (select.firstChild) select.removeChild(select.firstChild);
+    countryOptionCodes(selected).forEach(function (country) {
+      var optionNode = document.createElement("option");
+      optionNode.value = country;
+      optionNode.textContent = countryOptionLabel(country);
+      select.appendChild(optionNode);
+    });
+    select.value = selected;
+    if (select.value !== selected) select.value = "ALL";
+  }
+
+  function resolvedCountry() {
+    return savedCountry() || lastResolvedCountry || "ALL";
+  }
+
   function savedCountry() {
     try {
       return normalizeCountry(window.localStorage.getItem(COUNTRY_STORAGE_KEY));
@@ -275,9 +488,36 @@
     return document.getElementById("bp-delivery-embed-modal");
   }
 
+  function renderModalCloseIcon(button) {
+    if (!button) return;
+    button.replaceChildren();
+    button.insertAdjacentHTML(
+      "afterbegin",
+      '<svg class="bp-modal-close-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.75 6.75l10.5 10.5M17.25 6.75l-10.5 10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+    );
+  }
+
+  function prepareCountryModal(modal) {
+    if (!modal) return;
+    var select = document.getElementById("bp-delivery-embed-country-select");
+    var label = modal.querySelector(".bp-modal-label");
+    var close = document.getElementById("bp-delivery-embed-modal-close");
+    if (label) label.setAttribute("for", "bp-delivery-embed-country-select");
+    if (close) {
+      close.setAttribute("aria-label", "Close shipping location selector");
+      renderModalCloseIcon(close);
+    }
+    var staleNote = document.getElementById("bp-delivery-embed-modal-note");
+    if (staleNote) staleNote.remove();
+    fillCountrySelect(select, resolvedCountry());
+  }
+
   function ensureCountryModal() {
     var existing = countryModal();
-    if (existing) return existing;
+    if (existing) {
+      prepareCountryModal(existing);
+      return existing;
+    }
 
     var overlay = el("div", "bp-modal-overlay");
     overlay.id = "bp-delivery-embed-modal";
@@ -290,7 +530,7 @@
     close.className = "bp-modal-close";
     close.id = "bp-delivery-embed-modal-close";
     close.setAttribute("aria-label", "Close shipping location selector");
-    close.textContent = "x";
+    renderModalCloseIcon(close);
     header.appendChild(title);
     header.appendChild(close);
 
@@ -301,21 +541,7 @@
 
     var select = document.createElement("select");
     select.id = "bp-delivery-embed-country-select";
-    [
-      ["AU", "Australia (AUD)"],
-      ["US", "United States (USD)"],
-      ["GB", "United Kingdom (GBP)"],
-      ["CA", "Canada (CAD)"],
-      ["FR", "France (EUR)"],
-      ["DE", "Germany (EUR)"],
-      ["SG", "Singapore (SGD)"],
-      ["ALL", "All countries"]
-    ].forEach(function (item) {
-      var optionNode = document.createElement("option");
-      optionNode.value = item[0];
-      optionNode.textContent = item[1];
-      select.appendChild(optionNode);
-    });
+    fillCountrySelect(select, resolvedCountry());
 
     var save = document.createElement("button");
     save.type = "button";
@@ -335,9 +561,10 @@
   function openCountryModal() {
     var modal = ensureCountryModal();
     var select = document.getElementById("bp-delivery-embed-country-select");
-    var selected = savedCountry();
-    if (select && selected) select.value = selected;
+    var selected = resolvedCountry();
+    fillCountrySelect(select, selected);
     modal.classList.add("open");
+    if (select) window.setTimeout(function () { select.focus(); }, 0);
   }
 
   function closeCountryModal() {
@@ -365,6 +592,7 @@
     if (save) {
       save.addEventListener("click", function () {
         var selectedCountry = storeCountry(select && select.value);
+        if (selectedCountry) lastResolvedCountry = selectedCountry;
         if (lastTrackingContext && selectedCountry) lastTrackingContext.countryCode = selectedCountry;
         trackEvent("country_change", lastTrackingContext);
         closeCountryModal();
@@ -390,7 +618,7 @@
       productTags: container.getAttribute("data-product-tags") || "",
       productCollections: container.getAttribute("data-product-collections") || "",
       widgetId: config.widgetId || "",
-      countryCode: normalizeCountry(config.countryCode) || savedCountry() || "ALL"
+      countryCode: normalizeCountry(config.countryCode) || savedCountry() || lastResolvedCountry || "ALL"
     };
   }
 
@@ -466,13 +694,14 @@
 
   function appendFormatted(parent, value, config) {
     var source = text(value);
+    var country = normalizeCountry(config.countryCode);
     var replacements = {
       "{order_date}": text(config.orderDate),
       "{ship_date}": text(config.shipDate),
       "{min_date}": text(config.minDate),
       "{max_date}": text(config.maxDate),
-      "{COUNTRY_NAME}": text(config.countryName, "your country"),
-      "{COUNTRY_FLAG}": text(config.countryFlag, "")
+      "{COUNTRY_NAME}": text(config.countryName, countryDisplayName(country) || "your country"),
+      "{COUNTRY_FLAG}": text(config.countryFlag, countryFlag(country))
     };
     var cursor = 0;
     var pattern = /\{order_date\}|\{ship_date\}|\{min_date\}|\{max_date\}|\{countdown\}|\{COUNTRY_NAME\}|\{COUNTRY_FLAG\}/g;
@@ -486,6 +715,9 @@
         var span = el("span", "bp-timer-val");
         span.textContent = currentCountdown;
         parent.appendChild(span);
+      } else if (match[0] === "{COUNTRY_FLAG}") {
+        var flag = createCountryFlagNode(country);
+        if (flag) parent.appendChild(flag);
       } else {
         parent.appendChild(document.createTextNode(replacements[match[0]] || ""));
       }
@@ -1227,7 +1459,7 @@
   }
 
   function renderLocationControl(config) {
-    var countryCode = normalizeCountry(config.countryCode);
+    var countryCode = normalizeCountry(config.countryCode) || lastResolvedCountry || savedCountry();
     var row = el("div", "bp-location-row");
     row.style.display = "flex";
     row.style.justifyContent = "flex-end";
@@ -1236,13 +1468,23 @@
     var button = document.createElement("button");
     button.type = "button";
     button.className = "bp-change-link";
-    button.textContent = countryCode ? "Ship to " + countryCode + " - Change" : "Change shipping country";
+    renderCountryLinkContent(button, countryCode);
     button.addEventListener("click", openCountryModal);
     row.appendChild(button);
     return row;
   }
 
+  function enrichCountryConfig(config) {
+    var country = normalizeCountry(config.countryCode) || savedCountry() || lastResolvedCountry || "ALL";
+    lastResolvedCountry = country;
+    config.countryCode = country;
+    if (!text(config.countryName)) config.countryName = countryDisplayName(country);
+    if (!text(config.countryFlag)) config.countryFlag = countryFlag(country);
+    return config;
+  }
+
   function renderWidget(config, container) {
+    config = enrichCountryConfig(config || {});
     var s = config.settings || {};
     var blocks = Array.isArray(s.customBlocks) ? s.customBlocks : [];
     var textColor = color(s.textColor, "#1f2937");
@@ -1271,7 +1513,9 @@
       if (node) inner.appendChild(node);
     });
     widget.appendChild(inner);
-    widget.appendChild(renderLocationControl(config));
+    if (s.showLocationSelector !== false) {
+      widget.appendChild(renderLocationControl(config));
+    }
 
     container.replaceChildren(widget);
 
@@ -1281,6 +1525,10 @@
   }
 
   function startTimer(initialSecs) {
+    if (window.__bpDeliveryCountdownTimerId) {
+      window.clearInterval(window.__bpDeliveryCountdownTimerId);
+      window.__bpDeliveryCountdownTimerId = null;
+    }
     if (countdownTimerId) {
       window.clearInterval(countdownTimerId);
       countdownTimerId = null;
@@ -1303,6 +1551,7 @@
     };
     update();
     countdownTimerId = window.setInterval(update, 1000);
+    window.__bpDeliveryCountdownTimerId = countdownTimerId;
     return countdownTimerId;
   }
 
@@ -1326,6 +1575,11 @@
     fetch("/apps/bp-delivery?" + params.toString(), { credentials: "same-origin" })
       .then(function (response) { return response.json(); })
       .then(function (payload) {
+        var payloadCountry = normalizeCountry(payload && payload.countryCode);
+        if (payloadCountry) {
+          lastResolvedCountry = payloadCountry;
+          fillCountrySelect(document.getElementById("bp-delivery-embed-country-select"), payloadCountry);
+        }
         if (!payload.enabled) {
           hideSkeleton(skeleton);
           return;

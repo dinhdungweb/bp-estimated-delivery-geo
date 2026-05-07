@@ -290,6 +290,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         padding: selectedWidget.padding,
         bgGradient: selectedWidget.bgGradient,
         showTimeline: selectedWidget.showTimeline,
+        showLocationSelector: globalSettings.showLocationSelector,
         policyText: selectedWidget.policyText ?? "",
         headerText: selectedWidget.headerText ?? shippingMessage,
         subHeaderText: selectedWidget.subHeaderText,
