@@ -8,9 +8,7 @@ import {
 } from "../lib/pricing";
 import {
   currentPlanWithCachedFallback,
-  managedPricingUrlForShop,
   pricingReturnUrl,
-  shopHandleFromShopDomain,
   type CurrentPlan,
 } from "../lib/pricing.server";
 
@@ -118,41 +116,6 @@ describe("pricing return URL", () => {
         delete process.env.SHOPIFY_APP_URL;
       } else {
         process.env.SHOPIFY_APP_URL = previousAppUrl;
-      }
-    }
-  });
-});
-
-describe("managed pricing URL", () => {
-  it("builds the Shopify-hosted plan selection URL from shop and app handles", () => {
-    const previousHandle = process.env.SHOPIFY_MANAGED_PRICING_HANDLE;
-    process.env.SHOPIFY_MANAGED_PRICING_HANDLE = "bp-estimated-delivery-geo-2";
-
-    try {
-      expect(shopHandleFromShopDomain("bp-estimated-delivery-geo.myshopify.com")).toBe(
-        "bp-estimated-delivery-geo",
-      );
-      expect(managedPricingUrlForShop("bp-estimated-delivery-geo.myshopify.com")).toBe(
-        "https://admin.shopify.com/store/bp-estimated-delivery-geo/charges/bp-estimated-delivery-geo-2/pricing_plans",
-      );
-    } finally {
-      if (previousHandle === undefined) {
-        delete process.env.SHOPIFY_MANAGED_PRICING_HANDLE;
-      } else {
-        process.env.SHOPIFY_MANAGED_PRICING_HANDLE = previousHandle;
-      }
-    }
-  });
-
-  it("does not force managed pricing when the app handle is not configured", () => {
-    const previousHandle = process.env.SHOPIFY_MANAGED_PRICING_HANDLE;
-    delete process.env.SHOPIFY_MANAGED_PRICING_HANDLE;
-
-    try {
-      expect(managedPricingUrlForShop("bp-estimated-delivery-geo.myshopify.com")).toBeNull();
-    } finally {
-      if (previousHandle !== undefined) {
-        process.env.SHOPIFY_MANAGED_PRICING_HANDLE = previousHandle;
       }
     }
   });

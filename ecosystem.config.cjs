@@ -11,7 +11,6 @@ module.exports = {
         NODE_ENV: "production",
         PORT: "3002",
         SHOPIFY_APP_URL: "https://estimated-delivery.bluepeaks.top",
-        SHOPIFY_MANAGED_PRICING_HANDLE: "bp-estimated-delivery-geo-2",
       },
       max_memory_restart: "512M",
       time: true,

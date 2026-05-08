@@ -22,7 +22,6 @@ import {
 import {
   getCurrentPlan,
   isBillingTestMode,
-  managedPricingUrlForShop,
   pricingReturnUrl,
   syncCurrentPlanForShop,
 } from "../lib/pricing.server";
@@ -40,7 +39,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
   const url = new URL(request.url);
   const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
-  const managedPricingUrl = managedPricingUrlForShop(session.shop);
   const [totalRules, activeRules, savedDesigns] = await Promise.all([
     prisma.deliveryRule.count({ where: { shop: session.shop } }),
     prisma.deliveryRule.count({ where: { shop: session.shop, isActive: true } }),
@@ -66,8 +64,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     billingCancelled: url.searchParams.get("billing") === "cancelled",
     upgradeReason: url.searchParams.get("upgrade") || "",
     isTestMode: isBillingTestMode(),
-    managedPricingUrl,
-    isManagedPricing: Boolean(managedPricingUrl),
   });
 };
 
@@ -79,11 +75,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent !== "select-plan" || !isPlanHandle(planHandle)) {
     return data({ error: "Invalid pricing action." }, { status: 400 });
-  }
-
-  const managedPricingUrl = managedPricingUrlForShop(session.shop);
-  if (managedPricingUrl) {
-    return redirect(managedPricingUrl);
   }
 
   const currentPlan = await getCurrentPlan(billing);
@@ -132,8 +123,6 @@ export default function PricingPage() {
     billingCancelled,
     upgradeReason,
     isTestMode,
-    managedPricingUrl,
-    isManagedPricing,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData() as ActionResult | undefined;
   const navigation = useNavigation();
@@ -163,11 +152,6 @@ export default function PricingPage() {
   }, [billingCancelled, billingSuccess, upgradeReason]);
 
   const selectPlan = (planHandle: PlanHandle) => {
-    if (managedPricingUrl) {
-      window.open(managedPricingUrl, "_top");
-      return;
-    }
-
     submit({ intent: "select-plan", plan: planHandle }, { method: "post" });
   };
 
@@ -254,9 +238,7 @@ export default function PricingPage() {
                     </p>
                   )}
                   {plan.monthlyPrice > 0 && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      7-day free trial through {isManagedPricing ? "Shopify Managed Pricing" : "Shopify Billing"}
-                    </p>
+                    <p className="mt-1 text-xs text-gray-400">7-day free trial through Shopify Billing</p>
                   )}
                 </div>
 
