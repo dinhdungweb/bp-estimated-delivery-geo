@@ -71,6 +71,25 @@ const isDarkHex = (color?: string) => {
   return luminance !== null && luminance < 0.35;
 };
 
+const scaledPx = (value: unknown, fallback?: number) => {
+  const raw = value === undefined || value === null || value === "" ? fallback : value;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return undefined;
+  return `calc(${parsed}px * var(--bp-ui-scale, 1))`;
+};
+
+const scaledPairPx = (vertical: unknown, horizontal: unknown) => {
+  const y = scaledPx(vertical);
+  const x = scaledPx(horizontal);
+  return y && x ? `${y} ${x}` : undefined;
+};
+
+const scaledCssSize = (value: unknown, fallback?: string) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? scaledPx(parsed) : String(value);
+};
+
 const LORDICON_SCRIPT_ID = "bp-lordicon-player";
 const LORDICON_SCRIPT_SRC = "https://cdn.lordicon.com/lordicon.js";
 const LORDICON_TRIGGER_VALUES = new Set(["in", "click", "hover", "loop", "loop-on-hover", "boomerang", "morph", "sequence"]);
@@ -228,6 +247,7 @@ const LordiconLayer = ({
   const state = safeLordiconStateForTrigger(settings, icon, trigger);
   const speed = clampNumber(settings?.lordiconSpeed, 1, 0.25, 3);
   const displaySize = clampNumber(settings?.lordiconSize, size, 8, 128);
+  const displaySizeCss = scaledPx(displaySize) || `${displaySize}px`;
 
   const lordiconProps: Record<string, unknown> = {
     src,
@@ -237,14 +257,14 @@ const LordiconLayer = ({
     loading: "lazy",
     colors: `primary:${primary},secondary:${secondary}`,
     className: "bp-lordicon",
-    style: { width: `${displaySize}px`, height: `${displaySize}px` },
+    style: { width: displaySizeCss, height: displaySizeCss },
   };
   if (state) lordiconProps.state = state;
 
   return (
     <span
       className="bp-icon-stack"
-      style={{ width: displaySize, height: displaySize }}
+      style={{ width: displaySizeCss, height: displaySizeCss }}
     >
       {createElement("lord-icon" as any, lordiconProps)}
     </span>
@@ -274,8 +294,8 @@ const IconRenderer = ({
         src={path}
         alt=""
         style={{
-          width: size,
-          height: size,
+          width: scaledPx(size),
+          height: scaledPx(size),
           objectFit: "contain",
           filter: icon.includes("colorable") ? `drop-shadow(0 0 0 ${color})` : "none",
         }}
@@ -284,7 +304,11 @@ const IconRenderer = ({
   } else {
     const iconName = icon.startsWith("lucide:") ? icon.replace("lucide:", "").replace(/-/g, "_") : icon;
     const SelectedIcon = IconList[iconName] || IconList["package"];
-    staticIcon = <div style={{ color }}><SelectedIcon s={size} /></div>;
+    staticIcon = (
+      <span className="bp-icon-static" style={{ color, width: scaledPx(size), height: scaledPx(size) }}>
+        <SelectedIcon s={size} />
+      </span>
+    );
   }
 
   return (
@@ -336,7 +360,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       style={{
         display: "flex",
         justifyContent: "flex-end",
-        marginTop: "8px",
+        marginTop: scaledPx(8),
       }}
     >
       <button type="button" className="bp-change-link" aria-label="Preview delivery country">
@@ -363,13 +387,13 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
     if (s.blockBgColor) style.background = s.blockBgColor;
     if (s.blockTextColor) style.color = s.blockTextColor;
     if (s.blockAlign && s.blockAlign !== "inherit") style.textAlign = s.blockAlign;
-    if (s.blockPadding !== undefined) style.padding = `${Number(s.blockPadding) || 0}px`;
+    if (s.blockPadding !== undefined) style.padding = scaledPx(Number(s.blockPadding) || 0) || "0";
     if (s.blockRadius !== undefined) {
-      style.borderRadius = `${Number(s.blockRadius) || 0}px`;
+      style.borderRadius = scaledPx(Number(s.blockRadius) || 0) || "0";
       style.overflow = "hidden";
     }
-    if (s.blockMarginTop !== undefined) style.marginTop = `${Number(s.blockMarginTop) || 0}px`;
-    if (s.blockMarginBottom !== undefined) style.marginBottom = `${Number(s.blockMarginBottom) || 0}px`;
+    if (s.blockMarginTop !== undefined) style.marginTop = scaledPx(Number(s.blockMarginTop) || 0) || "0";
+    if (s.blockMarginBottom !== undefined) style.marginBottom = scaledPx(Number(s.blockMarginBottom) || 0) || "0";
     if (s.blockOpacity !== undefined) style.opacity = Math.min(100, Math.max(20, Number(s.blockOpacity) || 100)) / 100;
     const borderWidth = Number(s.blockBorderWidth || 0);
     if (borderWidth > 0 || s.blockBorderColor) {
@@ -396,27 +420,35 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       ? s.iconPosition
       : 'top';
     const isHorizontal = iconPosition === 'left' || iconPosition === 'right';
+    const titleFontSize =
+      s.titleFontSize !== undefined
+        ? scaledPx(s.titleFontSize)
+        : s.fontSize === 'sm'
+          ? scaledPx(14)
+          : s.fontSize === 'lg'
+            ? scaledPx(20)
+            : 'inherit';
 
     return (
       <div key={s.id} className={`bp-header ${isBannerType ? 'bp-header-banner' : ''}`} style={{
         background: isBannerType ? (s.bgColor || '#fde047') : (s.bgColor || 'transparent'),
         border: s.borderWidth ? `${s.borderWidth}px solid ${s.borderColor || borderColor}` : 'none',
-        borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : (isBannerType ? 8 : 0),
+        borderRadius: s.borderRadius !== undefined ? scaledPx(s.borderRadius) : (isBannerType ? scaledPx(8) : 0),
         color: isBannerType ? (s.textColor || '#000') : (s.textColor || 'inherit'),
         flexDirection: isHorizontal ? 'row' : 'column',
         alignItems: s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center',
-        padding: s.padding !== undefined ? `${s.padding}px` : '',
-        gap: s.gap !== undefined ? `${s.gap}px` : undefined,
-        '--bp-size': `${s.iconSize || 24}px`
+        padding: s.padding !== undefined ? scaledPx(s.padding) : '',
+        gap: s.gap !== undefined ? scaledPx(s.gap) : undefined,
+        '--bp-size': scaledPx(s.iconSize || 24)
       } as any}>
         {(iconPosition === 'top' || iconPosition === 'left') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: s.textGap !== undefined ? `${s.textGap}px` : '2px', textAlign: s.align || 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s.textGap !== undefined ? scaledPx(s.textGap) : scaledPx(2), textAlign: s.align || 'center' }}>
            <div className="bp-text-label" style={{
              color: s.textColor || undefined,
-             fontSize: s.titleFontSize !== undefined ? `${s.titleFontSize}px` : s.fontSize === 'sm' ? '14px' : s.fontSize === 'lg' ? '20px' : 'inherit',
+             fontSize: titleFontSize,
              fontWeight: s.fontWeight || undefined,
            }}>{formatText(s.text)}</div>
-           {s.subText && <div className="bp-text-sub" style={{ color: s.subTextColor || undefined, fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(s.subText)}</div>}
+           {s.subText && <div className="bp-text-sub" style={{ color: s.subTextColor || undefined, fontSize: s.subTextFontSize !== undefined ? scaledPx(s.subTextFontSize) : undefined }}>{formatText(s.subText)}</div>}
         </div>
         {(iconPosition === 'bottom' || iconPosition === 'right') && s.icon && <IconRenderer icon={s.icon} color={s.iconColor || s.blockIconColor || "inherit"} size={s.iconSize || 24} animation={s} />}
       </div>
@@ -441,8 +473,8 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
     
     return (
       <div key={s.id} className={`bp-steps ${presetClass}`} data-count={items.length} style={{ 
-        '--bp-size': `${stepDotIconSize}px`,
-        '--bp-gap': `${s.itemGap || 16}px`,
+        '--bp-size': scaledPx(stepDotIconSize),
+        '--bp-gap': scaledPx(s.itemGap || 16),
       } as any}>
         {items.map((item, i) => {
           const isFirst = i === 0;
@@ -465,8 +497,8 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           return (
             <div key={item.id || i} className={itemClass} style={{
               background: stepBg,
-              padding: s.padding !== undefined ? `${s.padding}px` : undefined,
-              borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
+              padding: s.padding !== undefined ? scaledPx(s.padding) : undefined,
+              borderRadius: s.borderRadius !== undefined ? scaledPx(s.borderRadius) : undefined,
               border: (s.borderWidth && hasItemBorder) ? `${s.borderWidth}px solid ${itemBorderColor}` : undefined
             }}>
               {!isLast && hasTimelineConnector(preset) && <div className="bp-timeline-connector" style={{ borderTopStyle: s.connectorStyle || 'dashed', borderTopColor: accent } as any} />}
@@ -480,9 +512,9 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
                 <IconRenderer icon={item.icon} color={stepIconColor} size={s.iconSize || (preset === 'timeline_dots' ? 16 : 22)} animation={s} />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: preset === 'vertical' ? 'left' : 'center' }}>
-                <div className="bp-text-label" style={{ color: item.labelColor || (usesDarkSurface ? textColor : undefined), fontSize: s.labelFontSize !== undefined ? `${s.labelFontSize}px` : undefined }}>{formatText(item.label)}</div>
-                <div className="bp-text-sub" style={{ color: item.subTextColor || (usesDarkSurface ? 'rgba(248,250,252,0.68)' : undefined), fontSize: s.subTextFontSize !== undefined ? `${s.subTextFontSize}px` : undefined }}>{formatText(item.subText)}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: scaledPx(2), textAlign: preset === 'vertical' ? 'left' : 'center' }}>
+                <div className="bp-text-label" style={{ color: item.labelColor || (usesDarkSurface ? textColor : undefined), fontSize: s.labelFontSize !== undefined ? scaledPx(s.labelFontSize) : undefined }}>{formatText(item.label)}</div>
+                <div className="bp-text-sub" style={{ color: item.subTextColor || (usesDarkSurface ? 'rgba(248,250,252,0.68)' : undefined), fontSize: s.subTextFontSize !== undefined ? scaledPx(s.subTextFontSize) : undefined }}>{formatText(item.subText)}</div>
               </div>
             </div>
           );
@@ -496,17 +528,17 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       background: s.bgColor || 'rgba(0,0,0,0.03)',
       color: s.textColor || 'inherit',
       border: Number(s.borderWidth || 0) > 0 ? `${s.borderWidth}px solid ${s.borderColor || borderColor}` : undefined,
-      borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
-      padding: s.padding !== undefined ? `${s.padding}px ${Math.round(Number(s.padding) * 1.2)}px` : undefined,
-      fontSize: s.fontSize !== undefined ? `${s.fontSize}px` : undefined,
-      gap: s.gap !== undefined ? `${s.gap}px` : undefined,
+      borderRadius: s.borderRadius !== undefined ? scaledPx(s.borderRadius) : undefined,
+      padding: s.padding !== undefined ? scaledPairPx(s.padding, Math.round(Number(s.padding) * 1.2)) : undefined,
+      fontSize: s.fontSize !== undefined ? scaledPx(s.fontSize) : undefined,
+      gap: s.gap !== undefined ? scaledPx(s.gap) : undefined,
       '--bp-ic': s.color || s.blockIconColor || iconColor
     } as any}>
       <div className="bp-timer-dot" style={{
         display: 'block',
-        width: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
-        height: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
-        flexBasis: s.dotSize !== undefined ? `${s.dotSize}px` : undefined,
+        width: s.dotSize !== undefined ? scaledPx(s.dotSize) : undefined,
+        height: s.dotSize !== undefined ? scaledPx(s.dotSize) : undefined,
+        flexBasis: s.dotSize !== undefined ? scaledPx(s.dotSize) : undefined,
       }} />
       <div className="bp-text-label" style={{ fontWeight: s.fontWeight || '500' }}>
         {formatText(s.text ?? s.timerFormat ?? "Order in {countdown}")}
@@ -524,10 +556,10 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
         backgroundColor: s.bgColor || (s.styleType === 'outline' ? 'transparent' : bg),
         borderColor: s.borderColor || bc,
         borderWidth: s.borderWidth !== undefined ? `${s.borderWidth}px` : undefined,
-        borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
-        padding: s.padding !== undefined ? `${s.padding}px ${Math.round(Number(s.padding) * 1.33)}px` : undefined,
-        gap: s.gap !== undefined ? `${s.gap}px` : undefined,
-        fontSize: s.fontSize !== undefined ? `${s.fontSize}px` : undefined,
+        borderRadius: s.borderRadius !== undefined ? scaledPx(s.borderRadius) : undefined,
+        padding: s.padding !== undefined ? scaledPairPx(s.padding, Math.round(Number(s.padding) * 1.33)) : undefined,
+        gap: s.gap !== undefined ? scaledPx(s.gap) : undefined,
+        fontSize: s.fontSize !== undefined ? scaledPx(s.fontSize) : undefined,
         fontWeight: s.fontWeight || undefined,
         textAlign: s.align || 'left',
         color: s.textColor || 'inherit'
@@ -550,49 +582,49 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           borderColor: s.borderColor || undefined,
           color: s.textColor || undefined,
           textAlign: s.align || "left",
-          padding: s.padding !== undefined ? `${s.padding}px` : undefined,
-          borderRadius: s.borderRadius !== undefined ? `${s.borderRadius}px` : undefined,
+          padding: s.padding !== undefined ? scaledPx(s.padding) : undefined,
+          borderRadius: s.borderRadius !== undefined ? scaledPx(s.borderRadius) : undefined,
           borderWidth: s.borderWidth !== undefined ? `${s.borderWidth}px` : undefined,
-          gap: s.gap !== undefined ? `${s.gap}px` : undefined,
+          gap: s.gap !== undefined ? scaledPx(s.gap) : undefined,
         }}
       >
         <div className="bp-promise-icon" style={{
           background: s.iconBgColor || undefined,
-          width: s.iconBoxSize !== undefined ? `${s.iconBoxSize}px` : undefined,
-          height: s.iconBoxSize !== undefined ? `${s.iconBoxSize}px` : undefined,
-          flexBasis: s.iconBoxSize !== undefined ? `${s.iconBoxSize}px` : undefined,
-          borderRadius: s.iconBoxRadius !== undefined ? `${s.iconBoxRadius}px` : undefined,
+          width: s.iconBoxSize !== undefined ? scaledPx(s.iconBoxSize) : undefined,
+          height: s.iconBoxSize !== undefined ? scaledPx(s.iconBoxSize) : undefined,
+          flexBasis: s.iconBoxSize !== undefined ? scaledPx(s.iconBoxSize) : undefined,
+          borderRadius: s.iconBoxRadius !== undefined ? scaledPx(s.iconBoxRadius) : undefined,
         }}>
           <IconRenderer icon={s.icon || "truck"} color={blockIconColor(s)} size={s.iconSize || 24} animation={s} />
         </div>
         <div className="bp-promise-body">
-          <div className="bp-text-label" style={{ color: s.titleColor || s.textColor || undefined, fontSize: s.titleFontSize !== undefined ? `${s.titleFontSize}px` : undefined }}>{formatText(s.title || "Get it by {max_date}")}</div>
-          {s.subtitle && <div className="bp-text-sub" style={{ color: s.subtitleColor || undefined, fontSize: s.subtitleFontSize !== undefined ? `${s.subtitleFontSize}px` : undefined }}>{formatText(s.subtitle)}</div>}
+          <div className="bp-text-label" style={{ color: s.titleColor || s.textColor || undefined, fontSize: s.titleFontSize !== undefined ? scaledPx(s.titleFontSize) : undefined }}>{formatText(s.title || "Get it by {max_date}")}</div>
+          {s.subtitle && <div className="bp-text-sub" style={{ color: s.subtitleColor || undefined, fontSize: s.subtitleFontSize !== undefined ? scaledPx(s.subtitleFontSize) : undefined }}>{formatText(s.subtitle)}</div>}
         </div>
         {s.badgeText && <div className="bp-promise-badge" style={{
           background: s.badgeBgColor || undefined,
           color: s.badgeTextColor || undefined,
-          fontSize: s.badgeFontSize !== undefined ? `${s.badgeFontSize}px` : undefined,
-          borderRadius: s.badgeRadius !== undefined ? `${s.badgeRadius}px` : undefined,
+          fontSize: s.badgeFontSize !== undefined ? scaledPx(s.badgeFontSize) : undefined,
+          borderRadius: s.badgeRadius !== undefined ? scaledPx(s.badgeRadius) : undefined,
         }}>{formatText(s.badgeText)}</div>}
       </div>
     );
   };
 
   const render_policy_accordion = (s: any) => (
-    <div key={s.id} className="bp-policy-list" style={{ gap: s.itemGap !== undefined ? `${s.itemGap}px` : undefined }}>
+    <div key={s.id} className="bp-policy-list" style={{ gap: s.itemGap !== undefined ? scaledPx(s.itemGap) : undefined }}>
       {normalizePolicyItems(s).map((item, index) => (
         <details key={item.id} className="bp-policy-item" open={s.openFirst !== false && index === 0} style={{
           background: item.bgColor || undefined,
           borderColor: item.borderColor || undefined,
           borderWidth: s.borderWidth !== undefined ? `${s.borderWidth}px` : undefined,
-          borderRadius: s.itemRadius !== undefined ? `${s.itemRadius}px` : undefined,
+          borderRadius: s.itemRadius !== undefined ? scaledPx(s.itemRadius) : undefined,
         }}>
-          <summary className="bp-policy-summary" style={{ padding: s.itemPadding !== undefined ? `${s.itemPadding}px ${s.itemPadding + 2}px` : undefined }}>
+          <summary className="bp-policy-summary" style={{ padding: s.itemPadding !== undefined ? scaledPairPx(s.itemPadding, Number(s.itemPadding) + 2) : undefined }}>
             <IconRenderer icon={item.icon || "shield"} color={item.iconColor || blockIconColor(s)} size={s.iconSize || 18} animation={s} />
-            <span style={{ color: item.titleColor || undefined, fontSize: s.titleFontSize !== undefined ? `${s.titleFontSize}px` : undefined }}>{formatText(item.title)}</span>
+            <span style={{ color: item.titleColor || undefined, fontSize: s.titleFontSize !== undefined ? scaledPx(s.titleFontSize) : undefined }}>{formatText(item.title)}</span>
           </summary>
-          <div className="bp-policy-body" style={{ color: item.bodyColor || undefined, fontSize: s.bodyFontSize !== undefined ? `${s.bodyFontSize}px` : undefined }}>{formatText(item.body)}</div>
+          <div className="bp-policy-body" style={{ color: item.bodyColor || undefined, fontSize: s.bodyFontSize !== undefined ? scaledPx(s.bodyFontSize) : undefined }}>{formatText(item.body)}</div>
         </details>
       ))}
     </div>
@@ -608,69 +640,69 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       case 'banner': content = render_banner(block.settings); break;
       case 'policy_accordion': content = render_policy_accordion(block.settings); break;
       case 'dual_info': content = (
-        <div key={block.id} className="bp-dual-info" style={{ gap: block.settings.columnGap !== undefined ? `${block.settings.columnGap}px` : undefined }}>
+        <div key={block.id} className="bp-dual-info" style={{ gap: block.settings.columnGap !== undefined ? scaledPx(block.settings.columnGap) : undefined }}>
           <div className="bp-dual-card" style={{
             background: block.settings.leftBgColor || undefined,
             borderColor: block.settings.leftBorderColor || undefined,
             borderWidth: block.settings.borderWidth !== undefined ? `${block.settings.borderWidth}px` : undefined,
-            borderRadius: block.settings.cardRadius !== undefined ? `${block.settings.cardRadius}px` : undefined,
-            padding: block.settings.cardPadding !== undefined ? `${block.settings.cardPadding}px` : undefined,
-            gap: block.settings.cardGap !== undefined ? `${block.settings.cardGap}px` : undefined,
+            borderRadius: block.settings.cardRadius !== undefined ? scaledPx(block.settings.cardRadius) : undefined,
+            padding: block.settings.cardPadding !== undefined ? scaledPx(block.settings.cardPadding) : undefined,
+            gap: block.settings.cardGap !== undefined ? scaledPx(block.settings.cardGap) : undefined,
           }}>
             <IconRenderer icon={block.settings.leftIcon || "monitor"} color={block.settings.leftIconColor || blockIconColor(block.settings)} size={block.settings.iconSize || 28} animation={block.settings} />
-            <div className="bp-text-label" style={{ color: block.settings.leftTitleColor || undefined, fontSize: block.settings.titleFontSize !== undefined ? `${block.settings.titleFontSize}px` : undefined }}>{formatText(block.settings.leftTitle || "Online")}</div>
-            <div className="bp-text-sub" style={{ color: block.settings.leftTextColor || undefined, fontSize: block.settings.textFontSize !== undefined ? `${block.settings.textFontSize}px` : undefined }}>{formatText(block.settings.leftText)}</div>
+            <div className="bp-text-label" style={{ color: block.settings.leftTitleColor || undefined, fontSize: block.settings.titleFontSize !== undefined ? scaledPx(block.settings.titleFontSize) : undefined }}>{formatText(block.settings.leftTitle || "Online")}</div>
+            <div className="bp-text-sub" style={{ color: block.settings.leftTextColor || undefined, fontSize: block.settings.textFontSize !== undefined ? scaledPx(block.settings.textFontSize) : undefined }}>{formatText(block.settings.leftText)}</div>
           </div>
           <div className="bp-dual-card" style={{
             background: block.settings.rightBgColor || undefined,
             borderColor: block.settings.rightBorderColor || undefined,
             borderWidth: block.settings.borderWidth !== undefined ? `${block.settings.borderWidth}px` : undefined,
-            borderRadius: block.settings.cardRadius !== undefined ? `${block.settings.cardRadius}px` : undefined,
-            padding: block.settings.cardPadding !== undefined ? `${block.settings.cardPadding}px` : undefined,
-            gap: block.settings.cardGap !== undefined ? `${block.settings.cardGap}px` : undefined,
+            borderRadius: block.settings.cardRadius !== undefined ? scaledPx(block.settings.cardRadius) : undefined,
+            padding: block.settings.cardPadding !== undefined ? scaledPx(block.settings.cardPadding) : undefined,
+            gap: block.settings.cardGap !== undefined ? scaledPx(block.settings.cardGap) : undefined,
           }}>
             <IconRenderer icon={block.settings.rightIcon || "store"} color={block.settings.rightIconColor || blockIconColor(block.settings)} size={block.settings.iconSize || 28} animation={block.settings} />
-            <div className="bp-text-label" style={{ color: block.settings.rightTitleColor || undefined, fontSize: block.settings.titleFontSize !== undefined ? `${block.settings.titleFontSize}px` : undefined }}>{formatText(block.settings.rightTitle || "In Store")}</div>
-            <div className="bp-text-sub" style={{ color: block.settings.rightTextColor || undefined, fontSize: block.settings.textFontSize !== undefined ? `${block.settings.textFontSize}px` : undefined }}>{formatText(block.settings.rightText)}</div>
+            <div className="bp-text-label" style={{ color: block.settings.rightTitleColor || undefined, fontSize: block.settings.titleFontSize !== undefined ? scaledPx(block.settings.titleFontSize) : undefined }}>{formatText(block.settings.rightTitle || "In Store")}</div>
+            <div className="bp-text-sub" style={{ color: block.settings.rightTextColor || undefined, fontSize: block.settings.textFontSize !== undefined ? scaledPx(block.settings.textFontSize) : undefined }}>{formatText(block.settings.rightText)}</div>
           </div>
         </div>
       ); break;
-      case 'divider': content = <div key={block.id} className="bp-divider" style={{ display: 'block', height: block.settings.height || 1, background: block.settings.color || borderColor, margin: '8px 0' }} />; break;
-      case 'spacer': content = <div key={block.id} className="bp-spacer" style={{ display: 'block', height: block.settings.height || 16 }} />; break;
+      case 'divider': content = <div key={block.id} className="bp-divider" style={{ display: 'block', height: scaledPx(block.settings.height, 1), background: block.settings.color || borderColor, margin: `${scaledPx(8)} 0` }} />; break;
+      case 'spacer': content = <div key={block.id} className="bp-spacer" style={{ display: 'block', height: scaledPx(block.settings.height, 16) }} />; break;
       case 'progress': content = (
-        <div key={block.id} style={{ padding: '8px 0' }}>
-          <div className="bp-text-label" style={{ marginBottom: '6px', color: block.settings.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? `${block.settings.labelFontSize}px` : undefined }}>{formatText(block.settings.label)}</div>
+        <div key={block.id} style={{ padding: `${scaledPx(8)} 0` }}>
+          <div className="bp-text-label" style={{ marginBottom: scaledPx(6), color: block.settings.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? scaledPx(block.settings.labelFontSize) : undefined }}>{formatText(block.settings.label)}</div>
           <div className="bp-progress-bar" style={{
             background: block.settings.trackColor || undefined,
             border: (block.settings.trackBorderWidth || block.settings.trackBorderColor) ? `${block.settings.trackBorderWidth || 1}px solid ${block.settings.trackBorderColor || borderColor}` : undefined,
-            height: block.settings.height !== undefined ? `${block.settings.height}px` : undefined,
-            borderRadius: block.settings.radius !== undefined ? `${block.settings.radius}px` : undefined,
+            height: block.settings.height !== undefined ? scaledPx(block.settings.height) : undefined,
+            borderRadius: block.settings.radius !== undefined ? scaledPx(block.settings.radius) : undefined,
           }}>
             <div className="bp-progress-fill" style={{
               width: `${block.settings.percentage || 75}%`,
               background: block.settings.fillStyle === 'gradient'
                 ? `linear-gradient(90deg, ${block.settings.color || iconColor}, ${block.settings.gradientEndColor || '#818cf8'})`
                 : block.settings.color || block.settings.blockIconColor || iconColor,
-              borderRadius: block.settings.radius !== undefined ? `${block.settings.radius}px` : undefined,
+              borderRadius: block.settings.radius !== undefined ? scaledPx(block.settings.radius) : undefined,
             }} />
           </div>
         </div>
       ); break;
       case 'trust_badges': content = (
-        <div key={block.id} className="bp-trust-row" style={{ gap: block.settings.rowGap !== undefined ? `${block.settings.rowGap}px` : undefined }}>
+        <div key={block.id} className="bp-trust-row" style={{ gap: block.settings.rowGap !== undefined ? scaledPx(block.settings.rowGap) : undefined }}>
           {normalizeTrustBadges(block.settings).map((badge) => (
             <div key={badge.id} className="bp-trust-item" title={badge.label || badge.icon} style={{
               background: badge.bgColor || undefined,
               border: badge.borderColor ? `1px solid ${badge.borderColor}` : undefined,
-              padding: block.settings.itemPadding !== undefined ? `${block.settings.itemPadding}px ${Math.round(Number(block.settings.itemPadding) * 1.25)}px` : undefined,
-              borderRadius: block.settings.itemRadius !== undefined ? `${block.settings.itemRadius}px` : undefined,
-              gap: block.settings.itemGap !== undefined ? `${block.settings.itemGap}px` : undefined,
+              padding: block.settings.itemPadding !== undefined ? scaledPairPx(block.settings.itemPadding, Math.round(Number(block.settings.itemPadding) * 1.25)) : undefined,
+              borderRadius: block.settings.itemRadius !== undefined ? scaledPx(block.settings.itemRadius) : undefined,
+              gap: block.settings.itemGap !== undefined ? scaledPx(block.settings.itemGap) : undefined,
             }}>
               <IconRenderer icon={badge.icon} color={badge.iconColor || blockIconColor(block.settings)} size={block.settings.iconSize || 24} animation={block.settings} />
               {(badge.label || badge.subText) && (
                 <span className="bp-trust-copy">
-                  {badge.label && <span className="bp-text-label" style={{ color: badge.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? `${block.settings.labelFontSize}px` : undefined }}>{formatText(badge.label)}</span>}
-                  {badge.subText && <span className="bp-text-sub" style={{ color: badge.subTextColor || undefined, fontSize: block.settings.subTextFontSize !== undefined ? `${block.settings.subTextFontSize}px` : undefined }}>{formatText(badge.subText)}</span>}
+                  {badge.label && <span className="bp-text-label" style={{ color: badge.labelColor || undefined, fontSize: block.settings.labelFontSize !== undefined ? scaledPx(block.settings.labelFontSize) : undefined }}>{formatText(badge.label)}</span>}
+                  {badge.subText && <span className="bp-text-sub" style={{ color: badge.subTextColor || undefined, fontSize: block.settings.subTextFontSize !== undefined ? scaledPx(block.settings.subTextFontSize) : undefined }}>{formatText(badge.subText)}</span>}
                 </span>
               )}
             </div>
@@ -685,10 +717,10 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
             style={{
               display: "inline-block",
               maxWidth: "100%",
-              width: String(block.settings.width || "auto"),
-              height: String(block.settings.height || "auto"),
+              width: scaledCssSize(block.settings.width, "auto"),
+              height: scaledCssSize(block.settings.height, "auto"),
               objectFit: block.settings.objectFit || "contain",
-              borderRadius: block.settings.borderRadius !== undefined ? `${block.settings.borderRadius}px` : undefined,
+              borderRadius: block.settings.borderRadius !== undefined ? scaledPx(block.settings.borderRadius) : undefined,
               border: block.settings.borderWidth ? `${block.settings.borderWidth}px solid ${block.settings.borderColor || borderColor}` : undefined,
               opacity: block.settings.opacity !== undefined ? Number(block.settings.opacity) / 100 : undefined,
             }}
@@ -711,8 +743,8 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       '--bp-ic': iconColor,
       '--bp-bg': bgColor || '#fff',
       '--bp-bc': borderColor,
-      '--bp-rad': `${borderRadius}px`,
-      '--bp-pad': `${padding}px`,
+      '--bp-rad': scaledPx(borderRadius),
+      '--bp-pad': scaledPx(padding),
       background: bgGradient || bgColor || '#fff',
       border: settings.borderWidth ? `${settings.borderWidth}px solid ${settings.borderColor || borderColor}` : 'none'
     } as any}>

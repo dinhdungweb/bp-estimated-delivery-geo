@@ -293,6 +293,26 @@
     return Math.min(max, Math.max(min, parsed));
   }
 
+  function scaledPx(value) {
+    var parsed = Number(value);
+    if (!Number.isFinite(parsed)) return "";
+    return "calc(" + parsed + "px * var(--bp-ui-scale, 1))";
+  }
+
+  function scaledNumberPx(value, fallback, min, max) {
+    return scaledPx(number(value, fallback, min, max));
+  }
+
+  function scaledPairPx(vertical, horizontal) {
+    return scaledPx(vertical) + " " + scaledPx(horizontal);
+  }
+
+  function scaledCssSize(value, fallback) {
+    if (value === undefined || value === null || value === "") return fallback || "";
+    var parsed = Number(value);
+    return Number.isFinite(parsed) ? scaledPx(parsed) : text(value, fallback || "");
+  }
+
   function option(value, allowed, fallback) {
     var key = text(value);
     return allowed[key] ? key : fallback;
@@ -821,9 +841,10 @@
     ensureLordiconScript();
     settings = settings || {};
     var displaySize = number(settings.lordiconSize, size, 8, 128);
+    var displaySizeCss = scaledPx(displaySize);
     wrapper.className += " bp-icon-stack";
-    wrapper.style.width = displaySize + "px";
-    wrapper.style.height = displaySize + "px";
+    wrapper.style.width = displaySizeCss;
+    wrapper.style.height = displaySizeCss;
 
     var lordIcon = document.createElement("lord-icon");
     lordIcon.className = "bp-lordicon";
@@ -835,8 +856,8 @@
     lordIcon.setAttribute("loading", "lazy");
     lordIcon.setAttribute("speed", String(number(settings.lordiconSpeed, 1, 0.25, 3)));
     lordIcon.setAttribute("colors", "primary:" + color(settings.lordiconPrimaryColor, iconColor) + ",secondary:" + color(settings.lordiconSecondaryColor, iconColor));
-    lordIcon.style.width = displaySize + "px";
-    lordIcon.style.height = displaySize + "px";
+    lordIcon.style.width = displaySizeCss;
+    lordIcon.style.height = displaySizeCss;
     var state = defaultLordiconState(settings, icon, trigger);
     if (state) lordIcon.setAttribute("state", state);
     wrapper.appendChild(lordIcon);
@@ -851,8 +872,8 @@
     wrapper.style.display = "inline-flex";
     wrapper.style.alignItems = "center";
     wrapper.style.justifyContent = "center";
-    wrapper.style.width = safeSize + "px";
-    wrapper.style.height = safeSize + "px";
+    wrapper.style.width = scaledPx(safeSize);
+    wrapper.style.height = scaledPx(safeSize);
     wrapper.style.lineHeight = "0";
     wrapper.style.verticalAlign = "middle";
     wrapper.style.color = color(iconColor, "#3b82f6");
@@ -873,8 +894,8 @@
       img.alt = "";
       img.width = safeSize;
       img.height = safeSize;
-      img.style.width = safeSize + "px";
-      img.style.height = safeSize + "px";
+      img.style.width = scaledPx(safeSize);
+      img.style.height = scaledPx(safeSize);
       img.style.display = "block";
       img.style.objectFit = "contain";
       staticWrap.appendChild(img);
@@ -907,13 +928,13 @@
     if (bg) wrapper.style.background = bg;
     if (textColor) wrapper.style.color = textColor;
     if (align !== "inherit") wrapper.style.textAlign = align;
-    if (b.blockPadding !== undefined) wrapper.style.padding = number(b.blockPadding, 0, 0, 80) + "px";
+    if (b.blockPadding !== undefined) wrapper.style.padding = scaledNumberPx(b.blockPadding, 0, 0, 80);
     if (b.blockRadius !== undefined) {
-      wrapper.style.borderRadius = number(b.blockRadius, 0, 0, 100) + "px";
+      wrapper.style.borderRadius = scaledNumberPx(b.blockRadius, 0, 0, 100);
       wrapper.style.overflow = "hidden";
     }
-    if (b.blockMarginTop !== undefined) wrapper.style.marginTop = number(b.blockMarginTop, 0, 0, 120) + "px";
-    if (b.blockMarginBottom !== undefined) wrapper.style.marginBottom = number(b.blockMarginBottom, 0, 0, 120) + "px";
+    if (b.blockMarginTop !== undefined) wrapper.style.marginTop = scaledNumberPx(b.blockMarginTop, 0, 0, 120);
+    if (b.blockMarginBottom !== undefined) wrapper.style.marginBottom = scaledNumberPx(b.blockMarginBottom, 0, 0, 120);
     if (b.blockOpacity !== undefined) wrapper.style.opacity = number(b.blockOpacity, 100, 20, 100) / 100;
     if (borderWidth > 0 || b.blockBorderColor) wrapper.style.border = (borderWidth || 1) + "px solid " + borderColor;
     if (shadow === "soft") wrapper.style.boxShadow = "var(--bp-shadow-soft)";
@@ -1022,12 +1043,12 @@
     container.style.border = number(b.borderWidth, 0, 0, 10) > 0
       ? number(b.borderWidth, 0, 0, 10) + "px solid " + color(b.borderColor, theme.borderColor)
       : "none";
-    container.style.borderRadius = number(b.borderRadius, isBanner ? 8 : 0, 0, 100) + "px";
+    container.style.borderRadius = scaledNumberPx(b.borderRadius, isBanner ? 8 : 0, 0, 100);
     container.style.flexDirection = isHorizontal ? "row" : "column";
     container.style.alignItems = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
-    container.style.padding = number(b.padding, 0, 0, 80) + "px";
-    if (b.gap !== undefined) container.style.gap = number(b.gap, 8, 0, 40) + "px";
-    container.style.setProperty("--bp-size", number(b.iconSize, 24, 8, 96) + "px");
+    container.style.padding = scaledNumberPx(b.padding, 0, 0, 80);
+    if (b.gap !== undefined) container.style.gap = scaledNumberPx(b.gap, 8, 0, 40);
+    container.style.setProperty("--bp-size", scaledNumberPx(b.iconSize, 24, 8, 96));
 
     if ((iconPosition === "top" || iconPosition === "left") && b.icon) {
       container.appendChild(createIcon(b.icon, color(b.iconColor || b.blockIconColor, "currentColor"), b.iconSize, b));
@@ -1036,11 +1057,11 @@
     var textWrap = el("div");
     textWrap.style.display = "flex";
     textWrap.style.flexDirection = "column";
-    textWrap.style.gap = number(b.textGap, 2, 0, 40) + "px";
+    textWrap.style.gap = scaledNumberPx(b.textGap, 2, 0, 40);
     textWrap.style.textAlign = align;
 
     var label = el("div", "bp-text-label");
-    label.style.fontSize = b.titleFontSize !== undefined ? number(b.titleFontSize, 14, 8, 60) + "px" : b.fontSize === "sm" ? "14px" : b.fontSize === "lg" ? "20px" : "inherit";
+    label.style.fontSize = b.titleFontSize !== undefined ? scaledNumberPx(b.titleFontSize, 14, 8, 60) : b.fontSize === "sm" ? scaledPx(14) : b.fontSize === "lg" ? scaledPx(20) : "inherit";
     label.style.fontWeight = text(b.fontWeight, "");
     label.style.color = color(b.textColor, "");
     appendFormatted(label, b.text || config.shippingMessage || "", config);
@@ -1049,7 +1070,7 @@
     if (b.subText) {
       var sub = el("div", "bp-text-sub");
       sub.style.color = color(b.subTextColor, "");
-      if (b.subTextFontSize !== undefined) sub.style.fontSize = number(b.subTextFontSize, 12, 8, 40) + "px";
+      if (b.subTextFontSize !== undefined) sub.style.fontSize = scaledNumberPx(b.subTextFontSize, 12, 8, 40);
       appendFormatted(sub, b.subText, config);
       textWrap.appendChild(sub);
     }
@@ -1067,13 +1088,19 @@
     var b = block.settings || {};
     var preset = option(b.preset, STEP_PRESETS, "horizontal");
     var container = el("div", "bp-steps bp-steps-" + preset.replace("_", "-"));
-    var iconSize = number(b.iconSize, preset === "timeline_dots" ? 16 : 22, 8, 96);
     var items = stepItems(b, config);
+    var iconSize = number(b.iconSize, preset === "timeline_dots" ? 16 : 22, 8, 96);
+    var hasAnimatedStepIcon = b.iconAnimation === "lordicon" || items.some(function (item) {
+      return Boolean(animatedIconFileKey(item.icon));
+    });
+    var dotIconSize = hasAnimatedStepIcon && b.lordiconSize !== undefined
+      ? Math.max(iconSize, number(b.lordiconSize, iconSize, 8, 128))
+      : iconSize;
     var accent = iconAccent(b, theme);
 
     container.setAttribute("data-count", String(items.length));
-    container.style.setProperty("--bp-size", iconSize + "px");
-    container.style.setProperty("--bp-gap", number(b.itemGap, 16, 0, 80) + "px");
+    container.style.setProperty("--bp-size", scaledPx(dotIconSize));
+    container.style.setProperty("--bp-gap", scaledNumberPx(b.itemGap, 16, 0, 80));
 
     items.forEach(function (item, idx) {
       var isFirst = idx === 0;
@@ -1089,8 +1116,8 @@
       var dotBg = color(item.dotColor, isFirst ? accent : "#ffffff");
       var stepIconColor = color(item.iconColor, isFirst ? "#ffffff" : accent);
       if (stepBg) itemNode.style.background = stepBg;
-      if (b.padding !== undefined) itemNode.style.padding = number(b.padding, 16, 0, 80) + "px";
-      itemNode.style.borderRadius = number(b.borderRadius, 0, 0, 100) + "px";
+      if (b.padding !== undefined) itemNode.style.padding = scaledNumberPx(b.padding, 16, 0, 80);
+      itemNode.style.borderRadius = scaledNumberPx(b.borderRadius, 0, 0, 100);
 
       var hasItemBorder = preset === "boxed_cards" || preset === "boxed_steps" || preset === "split_segments";
       if (number(b.borderWidth, 0, 0, 10) > 0 && hasItemBorder) {
@@ -1120,18 +1147,18 @@
       var textWrap = el("div");
       textWrap.style.display = "flex";
       textWrap.style.flexDirection = "column";
-      textWrap.style.gap = "2px";
+      textWrap.style.gap = scaledPx(2);
       textWrap.style.textAlign = preset === "vertical" ? "left" : "center";
 
       var label = el("div", "bp-text-label");
       label.style.color = color(item.labelColor, "");
-      if (b.labelFontSize !== undefined) label.style.fontSize = number(b.labelFontSize, 14, 8, 40) + "px";
+      if (b.labelFontSize !== undefined) label.style.fontSize = scaledNumberPx(b.labelFontSize, 14, 8, 40);
       appendFormatted(label, item.label, config);
       textWrap.appendChild(label);
 
       var sub = el("div", "bp-text-sub");
       sub.style.color = color(item.subTextColor, "");
-      if (b.subTextFontSize !== undefined) sub.style.fontSize = number(b.subTextFontSize, 12, 8, 40) + "px";
+      if (b.subTextFontSize !== undefined) sub.style.fontSize = scaledNumberPx(b.subTextFontSize, 12, 8, 40);
       appendFormatted(sub, item.subText, config);
       textWrap.appendChild(sub);
 
@@ -1150,21 +1177,21 @@
     if (number(b.borderWidth, 0, 0, 20) > 0) {
       container.style.border = number(b.borderWidth, 1, 0, 20) + "px solid " + color(b.borderColor, theme.borderColor);
     }
-    if (b.borderRadius !== undefined) container.style.borderRadius = number(b.borderRadius, 12, 0, 40) + "px";
+    if (b.borderRadius !== undefined) container.style.borderRadius = scaledNumberPx(b.borderRadius, 12, 0, 40);
     if (b.padding !== undefined) {
       var timerPadding = number(b.padding, 10, 0, 40);
-      container.style.padding = timerPadding + "px " + Math.round(timerPadding * 1.2) + "px";
+      container.style.padding = scaledPairPx(timerPadding, Math.round(timerPadding * 1.2));
     }
-    if (b.fontSize !== undefined) container.style.fontSize = number(b.fontSize, 13, 8, 40) + "px";
-    if (b.gap !== undefined) container.style.gap = number(b.gap, 10, 0, 40) + "px";
+    if (b.fontSize !== undefined) container.style.fontSize = scaledNumberPx(b.fontSize, 13, 8, 40);
+    if (b.gap !== undefined) container.style.gap = scaledNumberPx(b.gap, 10, 0, 40);
     container.style.setProperty("--bp-ic", color(b.color || b.blockIconColor, theme.iconColor));
     var dot = el("div", "bp-timer-dot");
     dot.style.display = "block";
     if (b.dotSize !== undefined) {
       var dotSize = number(b.dotSize, 9, 4, 40);
-      dot.style.width = dotSize + "px";
-      dot.style.height = dotSize + "px";
-      dot.style.flexBasis = dotSize + "px";
+      dot.style.width = scaledPx(dotSize);
+      dot.style.height = scaledPx(dotSize);
+      dot.style.flexBasis = scaledPx(dotSize);
     }
     container.appendChild(dot);
 
@@ -1188,15 +1215,15 @@
     container.style.background = background(b.bgColor, b.styleType === "outline" ? "transparent" : palette[type][0]);
     container.style.borderColor = color(b.borderColor, palette[type][1]);
     if (b.borderWidth !== undefined) container.style.borderWidth = number(b.borderWidth, 1, 0, 20) + "px";
-    if (b.borderRadius !== undefined) container.style.borderRadius = number(b.borderRadius, 12, 0, 40) + "px";
+    if (b.borderRadius !== undefined) container.style.borderRadius = scaledNumberPx(b.borderRadius, 12, 0, 40);
     if (b.padding !== undefined) {
       var bannerPadding = number(b.padding, 12, 0, 40);
-      container.style.padding = bannerPadding + "px " + Math.round(bannerPadding * 1.33) + "px";
+      container.style.padding = scaledPairPx(bannerPadding, Math.round(bannerPadding * 1.33));
     }
     container.style.textAlign = option(b.align, ALIGNMENTS, "left");
     container.style.color = color(b.textColor, "inherit");
-    if (b.gap !== undefined) container.style.gap = number(b.gap, 12, 0, 40) + "px";
-    if (b.fontSize !== undefined) container.style.fontSize = number(b.fontSize, 14, 8, 40) + "px";
+    if (b.gap !== undefined) container.style.gap = scaledNumberPx(b.gap, 12, 0, 40);
+    if (b.fontSize !== undefined) container.style.fontSize = scaledNumberPx(b.fontSize, 14, 8, 40);
     if (b.fontWeight !== undefined) container.style.fontWeight = text(b.fontWeight, "400");
 
     if (b.icon) container.appendChild(createIcon(b.icon, iconAccent(b, theme), number(b.iconSize, 20, 8, 80), b));
@@ -1217,33 +1244,33 @@
     container.style.borderColor = color(b.borderColor, "");
     container.style.color = color(b.textColor, "inherit");
     container.style.textAlign = align;
-    if (b.padding !== undefined) container.style.padding = number(b.padding, 14, 0, 80) + "px";
-    if (b.borderRadius !== undefined) container.style.borderRadius = number(b.borderRadius, 14, 0, 80) + "px";
+    if (b.padding !== undefined) container.style.padding = scaledNumberPx(b.padding, 14, 0, 80);
+    if (b.borderRadius !== undefined) container.style.borderRadius = scaledNumberPx(b.borderRadius, 14, 0, 80);
     if (b.borderWidth !== undefined) container.style.borderWidth = number(b.borderWidth, 1, 0, 20) + "px";
-    if (b.gap !== undefined) container.style.gap = number(b.gap, 12, 0, 40) + "px";
+    if (b.gap !== undefined) container.style.gap = scaledNumberPx(b.gap, 12, 0, 40);
 
     var icon = el("div", "bp-promise-icon");
     icon.style.background = background(b.iconBgColor, "");
     if (b.iconBoxSize !== undefined) {
       var iconBoxSize = number(b.iconBoxSize, 42, 16, 120);
-      icon.style.width = iconBoxSize + "px";
-      icon.style.height = iconBoxSize + "px";
-      icon.style.flexBasis = iconBoxSize + "px";
+      icon.style.width = scaledPx(iconBoxSize);
+      icon.style.height = scaledPx(iconBoxSize);
+      icon.style.flexBasis = scaledPx(iconBoxSize);
     }
-    if (b.iconBoxRadius !== undefined) icon.style.borderRadius = number(b.iconBoxRadius, 999, 0, 999) + "px";
+    if (b.iconBoxRadius !== undefined) icon.style.borderRadius = scaledNumberPx(b.iconBoxRadius, 999, 0, 999);
     icon.appendChild(createIcon(b.icon || "truck", iconAccent(b, theme), number(b.iconSize, 24, 8, 80), b));
     container.appendChild(icon);
 
     var body = el("div", "bp-promise-body");
     var title = el("div", "bp-text-label");
     title.style.color = color(b.titleColor || b.textColor, "");
-    if (b.titleFontSize !== undefined) title.style.fontSize = number(b.titleFontSize, 14, 8, 50) + "px";
+    if (b.titleFontSize !== undefined) title.style.fontSize = scaledNumberPx(b.titleFontSize, 14, 8, 50);
     appendFormatted(title, b.title || "Get it by {max_date}", config);
     body.appendChild(title);
     if (b.subtitle) {
       var subtitle = el("div", "bp-text-sub");
       subtitle.style.color = color(b.subtitleColor, "");
-      if (b.subtitleFontSize !== undefined) subtitle.style.fontSize = number(b.subtitleFontSize, 12, 8, 40) + "px";
+      if (b.subtitleFontSize !== undefined) subtitle.style.fontSize = scaledNumberPx(b.subtitleFontSize, 12, 8, 40);
       appendFormatted(subtitle, b.subtitle, config);
       body.appendChild(subtitle);
     }
@@ -1253,8 +1280,8 @@
       var badge = el("div", "bp-promise-badge");
       badge.style.background = background(b.badgeBgColor, "");
       badge.style.color = color(b.badgeTextColor, "");
-      if (b.badgeFontSize !== undefined) badge.style.fontSize = number(b.badgeFontSize, 11, 8, 32) + "px";
-      if (b.badgeRadius !== undefined) badge.style.borderRadius = number(b.badgeRadius, 999, 0, 999) + "px";
+      if (b.badgeFontSize !== undefined) badge.style.fontSize = scaledNumberPx(b.badgeFontSize, 11, 8, 32);
+      if (b.badgeRadius !== undefined) badge.style.borderRadius = scaledNumberPx(b.badgeRadius, 999, 0, 999);
       appendFormatted(badge, b.badgeText, config);
       container.appendChild(badge);
     }
@@ -1265,7 +1292,7 @@
   function renderPolicyAccordion(block, config, theme) {
     var b = block.settings || {};
     var container = el("div", "bp-policy-list");
-    if (b.itemGap !== undefined) container.style.gap = number(b.itemGap, 8, 0, 40) + "px";
+    if (b.itemGap !== undefined) container.style.gap = scaledNumberPx(b.itemGap, 8, 0, 40);
     policyItems(b).forEach(function (item, index) {
       var details = document.createElement("details");
       details.className = "bp-policy-item";
@@ -1273,26 +1300,26 @@
       if (itemBg) details.style.background = itemBg;
       if (item.borderColor) details.style.borderColor = color(item.borderColor, theme.borderColor);
       if (b.borderWidth !== undefined) details.style.borderWidth = number(b.borderWidth, 1, 0, 20) + "px";
-      if (b.itemRadius !== undefined) details.style.borderRadius = number(b.itemRadius, 12, 0, 40) + "px";
+      if (b.itemRadius !== undefined) details.style.borderRadius = scaledNumberPx(b.itemRadius, 12, 0, 40);
       if (b.openFirst !== false && index === 0) details.open = true;
 
       var summary = document.createElement("summary");
       summary.className = "bp-policy-summary";
       if (b.itemPadding !== undefined) {
         var itemPadding = number(b.itemPadding, 12, 0, 40);
-        summary.style.padding = itemPadding + "px " + (itemPadding + 2) + "px";
+        summary.style.padding = scaledPairPx(itemPadding, itemPadding + 2);
       }
       summary.appendChild(createIcon(item.icon, color(item.iconColor, iconAccent(b, theme)), number(b.iconSize, 18, 8, 60), b));
       var summaryText = document.createElement("span");
       summaryText.style.color = color(item.titleColor, "");
-      if (b.titleFontSize !== undefined) summaryText.style.fontSize = number(b.titleFontSize, 13, 8, 40) + "px";
+      if (b.titleFontSize !== undefined) summaryText.style.fontSize = scaledNumberPx(b.titleFontSize, 13, 8, 40);
       appendFormatted(summaryText, item.title, config);
       summary.appendChild(summaryText);
       details.appendChild(summary);
 
       var body = el("div", "bp-policy-body");
       body.style.color = color(item.bodyColor, "");
-      if (b.bodyFontSize !== undefined) body.style.fontSize = number(b.bodyFontSize, 12, 8, 36) + "px";
+      if (b.bodyFontSize !== undefined) body.style.fontSize = scaledNumberPx(b.bodyFontSize, 12, 8, 36);
       appendFormatted(body, item.body, config);
       details.appendChild(body);
       container.appendChild(details);
@@ -1303,7 +1330,7 @@
   function renderDualInfo(block, config, theme) {
     var b = block.settings || {};
     var container = el("div", "bp-dual-info");
-    if (b.columnGap !== undefined) container.style.gap = number(b.columnGap, 16, 0, 60) + "px";
+    if (b.columnGap !== undefined) container.style.gap = scaledNumberPx(b.columnGap, 16, 0, 60);
     [
       { icon: b.leftIcon || "monitor", title: b.leftTitle || "Online", body: b.leftText, bgColor: b.leftBgColor, borderColor: b.leftBorderColor, iconColor: b.leftIconColor, titleColor: b.leftTitleColor, textColor: b.leftTextColor },
       { icon: b.rightIcon || "store", title: b.rightTitle || "In Store", body: b.rightText, bgColor: b.rightBgColor, borderColor: b.rightBorderColor, iconColor: b.rightIconColor, titleColor: b.rightTitleColor, textColor: b.rightTextColor }
@@ -1313,18 +1340,18 @@
       if (cardBg) card.style.background = cardBg;
       if (item.borderColor) card.style.borderColor = color(item.borderColor, theme.borderColor);
       if (b.borderWidth !== undefined) card.style.borderWidth = number(b.borderWidth, 1, 0, 20) + "px";
-      if (b.cardRadius !== undefined) card.style.borderRadius = number(b.cardRadius, 16, 0, 40) + "px";
-      if (b.cardPadding !== undefined) card.style.padding = number(b.cardPadding, 20, 0, 60) + "px";
-      if (b.cardGap !== undefined) card.style.gap = number(b.cardGap, 8, 0, 40) + "px";
+      if (b.cardRadius !== undefined) card.style.borderRadius = scaledNumberPx(b.cardRadius, 16, 0, 40);
+      if (b.cardPadding !== undefined) card.style.padding = scaledNumberPx(b.cardPadding, 20, 0, 60);
+      if (b.cardGap !== undefined) card.style.gap = scaledNumberPx(b.cardGap, 8, 0, 40);
       card.appendChild(createIcon(item.icon, color(item.iconColor, iconAccent(b, theme)), number(b.iconSize, 28, 8, 80), b));
       var title = el("div", "bp-text-label");
       title.style.color = color(item.titleColor, "");
-      if (b.titleFontSize !== undefined) title.style.fontSize = number(b.titleFontSize, 14, 8, 50) + "px";
+      if (b.titleFontSize !== undefined) title.style.fontSize = scaledNumberPx(b.titleFontSize, 14, 8, 50);
       appendFormatted(title, item.title, config);
       card.appendChild(title);
       var body = el("div", "bp-text-sub");
       body.style.color = color(item.textColor, "");
-      if (b.textFontSize !== undefined) body.style.fontSize = number(b.textFontSize, 12, 8, 40) + "px";
+      if (b.textFontSize !== undefined) body.style.fontSize = scaledNumberPx(b.textFontSize, 12, 8, 40);
       appendFormatted(body, item.body || "", config);
       card.appendChild(body);
       container.appendChild(card);
@@ -1335,11 +1362,11 @@
   function renderProgress(block, config, theme) {
     var b = block.settings || {};
     var container = el("div");
-    container.style.padding = "8px 0";
+    container.style.padding = scaledPx(8) + " 0";
     var label = el("div", "bp-text-label");
-    label.style.marginBottom = "6px";
+    label.style.marginBottom = scaledPx(6);
     label.style.color = color(b.labelColor, "");
-    if (b.labelFontSize !== undefined) label.style.fontSize = number(b.labelFontSize, 14, 8, 40) + "px";
+    if (b.labelFontSize !== undefined) label.style.fontSize = scaledNumberPx(b.labelFontSize, 14, 8, 40);
     appendFormatted(label, b.label || "", config);
     container.appendChild(label);
 
@@ -1349,8 +1376,8 @@
     if (b.trackBorderColor || number(b.trackBorderWidth, 0, 0, 20) > 0) {
       bar.style.border = number(b.trackBorderWidth, 1, 0, 20) + "px solid " + color(b.trackBorderColor, theme.borderColor);
     }
-    if (b.height !== undefined) bar.style.height = number(b.height, 10, 2, 60) + "px";
-    bar.style.borderRadius = radius + "px";
+    if (b.height !== undefined) bar.style.height = scaledNumberPx(b.height, 10, 2, 60);
+    bar.style.borderRadius = scaledPx(radius);
     var fill = el("div", "bp-progress-fill");
     fill.style.width = number(b.percentage, 75, 0, 100) + "%";
     if (b.fillStyle === "gradient") {
@@ -1358,7 +1385,7 @@
     } else {
       fill.style.background = color(b.color || b.blockIconColor, theme.iconColor);
     }
-    fill.style.borderRadius = radius + "px";
+    fill.style.borderRadius = scaledPx(radius);
     bar.appendChild(fill);
     container.appendChild(bar);
     return container;
@@ -1368,7 +1395,7 @@
     var b = block.settings || {};
     var badges = trustBadgeItems(b);
     var container = el("div", "bp-trust-row");
-    if (b.rowGap !== undefined) container.style.gap = number(b.rowGap, 12, 0, 60) + "px";
+    if (b.rowGap !== undefined) container.style.gap = scaledNumberPx(b.rowGap, 12, 0, 60);
     badges.forEach(function (badge) {
       var item = el("div", "bp-trust-item");
       item.title = badge.label || iconName(badge.icon);
@@ -1377,24 +1404,24 @@
       if (badge.borderColor) item.style.border = "1px solid " + color(badge.borderColor, theme.borderColor);
       if (b.itemPadding !== undefined) {
         var badgePadding = number(b.itemPadding, 8, 0, 40);
-        item.style.padding = badgePadding + "px " + Math.round(badgePadding * 1.25) + "px";
+        item.style.padding = scaledPairPx(badgePadding, Math.round(badgePadding * 1.25));
       }
-      if (b.itemRadius !== undefined) item.style.borderRadius = number(b.itemRadius, 999, 0, 999) + "px";
-      if (b.itemGap !== undefined) item.style.gap = number(b.itemGap, 8, 0, 40) + "px";
+      if (b.itemRadius !== undefined) item.style.borderRadius = scaledNumberPx(b.itemRadius, 999, 0, 999);
+      if (b.itemGap !== undefined) item.style.gap = scaledNumberPx(b.itemGap, 8, 0, 40);
       item.appendChild(createIcon(badge.icon, color(badge.iconColor, iconAccent(b, theme)), number(b.iconSize, 24, 8, 80), b));
       if (badge.label || badge.subText) {
         var copy = el("span", "bp-trust-copy");
         if (badge.label) {
           var label = el("span", "bp-text-label");
           label.style.color = color(badge.labelColor, "");
-          if (b.labelFontSize !== undefined) label.style.fontSize = number(b.labelFontSize, 14, 8, 40) + "px";
+          if (b.labelFontSize !== undefined) label.style.fontSize = scaledNumberPx(b.labelFontSize, 14, 8, 40);
           appendFormatted(label, badge.label, config);
           copy.appendChild(label);
         }
         if (badge.subText) {
           var sub = el("span", "bp-text-sub");
           sub.style.color = color(badge.subTextColor, "");
-          if (b.subTextFontSize !== undefined) sub.style.fontSize = number(b.subTextFontSize, 12, 8, 36) + "px";
+          if (b.subTextFontSize !== undefined) sub.style.fontSize = scaledNumberPx(b.subTextFontSize, 12, 8, 36);
           appendFormatted(sub, badge.subText, config);
           copy.appendChild(sub);
         }
@@ -1416,10 +1443,10 @@
     img.alt = "";
     img.loading = "lazy";
     img.style.maxWidth = "100%";
-    img.style.width = text(b.width, "auto");
-    img.style.height = text(b.height, "auto");
+    img.style.width = scaledCssSize(b.width, "auto");
+    img.style.height = scaledCssSize(b.height, "auto");
     img.style.objectFit = option(b.objectFit, { contain: true, cover: true, fill: true }, "contain");
-    if (b.borderRadius !== undefined) img.style.borderRadius = number(b.borderRadius, 0, 0, 100) + "px";
+    if (b.borderRadius !== undefined) img.style.borderRadius = scaledNumberPx(b.borderRadius, 0, 0, 100);
     if (number(b.borderWidth, 0, 0, 20) > 0) {
       img.style.border = number(b.borderWidth, 0, 0, 20) + "px solid " + color(b.borderColor, "#e5e7eb");
     }
@@ -1444,15 +1471,15 @@
     if (block.type === "divider") {
       var divider = el("div", "bp-divider");
       divider.style.display = "block";
-      divider.style.height = number(block.settings && block.settings.height, 1, 1, 20) + "px";
+      divider.style.height = scaledNumberPx(block.settings && block.settings.height, 1, 1, 20);
       divider.style.background = color(block.settings && block.settings.color, theme.borderColor);
-      divider.style.margin = "8px 0";
+      divider.style.margin = scaledPx(8) + " 0";
       node = divider;
     }
     else if (block.type === "spacer") {
       var spacer = el("div", "bp-spacer");
       spacer.style.display = "block";
-      spacer.style.height = number(block.settings && block.settings.height, 16, 0, 200) + "px";
+      spacer.style.height = scaledNumberPx(block.settings && block.settings.height, 16, 0, 200);
       node = spacer;
     }
     return applyBlockStyle(node, block, theme);
@@ -1463,7 +1490,7 @@
     var row = el("div", "bp-location-row");
     row.style.display = "flex";
     row.style.justifyContent = "flex-end";
-    row.style.marginTop = "8px";
+    row.style.marginTop = scaledPx(8);
 
     var button = document.createElement("button");
     button.type = "button";
@@ -1499,8 +1526,8 @@
     widget.style.setProperty("--bp-ic", iconColor);
     widget.style.setProperty("--bp-bg", bgColor);
     widget.style.setProperty("--bp-bc", borderColor);
-    widget.style.setProperty("--bp-rad", number(s.borderRadius, 12, 0, 100) + "px");
-    widget.style.setProperty("--bp-pad", number(s.padding, 16, 0, 100) + "px");
+    widget.style.setProperty("--bp-rad", scaledNumberPx(s.borderRadius, 12, 0, 100));
+    widget.style.setProperty("--bp-pad", scaledNumberPx(s.padding, 16, 0, 100));
     widget.style.background = background(s.bgGradient, bgColor);
 
     if (number(s.borderWidth, 0, 0, 10) > 0) {
