@@ -9,7 +9,6 @@ import {
   Box, 
   Text, 
   Icon, 
-  Tabs,
   TextField,
   Select,
   RangeSlider,
@@ -824,7 +823,16 @@ export default function VisualBuilderStudio() {
     if (!hasAnimatedIcons) {
       if (!options.showEmpty) return null;
       return (
-        <Box padding="400" background="bg-fill-secondary" borderRadius="200">
+        <div
+          style={{
+            border: "1px solid #e1e3e5",
+            borderRadius: 12,
+            background: "#fff",
+            overflow: "hidden",
+            boxShadow: "0 1px 0 rgba(0, 0, 0, 0.02)",
+          }}
+        >
+        <Box padding="400">
           <BlockStack gap="200">
             <Text variant="bodySm" fontWeight="bold" alignment="center" as="p">
               No animated icons in this layer
@@ -834,24 +842,39 @@ export default function VisualBuilderStudio() {
             </Text>
           </BlockStack>
         </Box>
+        </div>
       );
     }
 
     return (
-      <Box padding="300" background="bg-fill-secondary" borderRadius="200">
+      <div
+        style={{
+          border: "1px solid #e1e3e5",
+          borderRadius: 12,
+          background: "#fff",
+          overflow: "hidden",
+          boxShadow: "0 1px 0 rgba(0, 0, 0, 0.02)",
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 14px",
+            background: "#fafafa",
+          }}
+        >
+          <span
+            style={{
+              color: "#202223",
+              fontSize: 13,
+              fontWeight: 650,
+              lineHeight: "18px",
+            }}
+          >
+            {options.title || "Animated Icon Settings"}
+          </span>
+        </div>
+        <Box padding="300" borderBlockStartWidth="025" borderColor="border-secondary">
         <BlockStack gap="300">
-          <InlineStack align="space-between" blockAlign="center">
-            <BlockStack gap="050">
-              <Text variant="bodySm" fontWeight="bold" as="p">
-                {options.title || "Animated Icon Settings"}
-              </Text>
-              <Text variant="bodySm" tone="subdued" as="p">
-                {uniqueAnimatedIcons.map((icon) => icon.name).join(", ")}
-              </Text>
-            </BlockStack>
-            <Badge tone="success">{`${uniqueAnimatedIcons.length} animated`}</Badge>
-          </InlineStack>
-
           <InlineStack gap="200">
             <div style={{ flex: 1 }}>
               <Select
@@ -893,6 +916,7 @@ export default function VisualBuilderStudio() {
           <ColorField label="Secondary Color" value={settings.lordiconSecondaryColor || textColor} onChange={(v) => updateBlockSettings(blockId, { lordiconSecondaryColor: v })} />
         </BlockStack>
       </Box>
+      </div>
     );
   };
 
@@ -924,7 +948,7 @@ export default function VisualBuilderStudio() {
           </InlineStack>
         </div>
 
-        {renderAnimatedIconControls(id, s)}
+        {type !== 'steps' && renderAnimatedIconControls(id, s)}
 
         {type === 'header' && (
           <BlockStack gap="300">
@@ -994,16 +1018,44 @@ export default function VisualBuilderStudio() {
             ) : (
               <BlockStack gap="400">
                  <InlineStack align="space-between" blockAlign="center">
-                    <Button variant="tertiary" onClick={() => updateBlockSettings(id, { preset: null })}>← Change Preset</Button>
-                    <InlineStack gap="200">
-                      <div style={{ width: '80px' }}>
-                        <Select 
-                          label="Decor" labelHidden
-                          options={[{label:'None',value:'none'},{label:'❤️',value:'heart'},{label:'🚚',value:'truck'}]} 
-                          value={s.decorator || 'none'} 
-                          onChange={(v) => updateBlockSettings(id, { decorator: v })} 
+                    <button
+                      type="button"
+                      onClick={() => updateBlockSettings(id, { preset: null })}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        minHeight: 36,
+                        padding: "8px 12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 10,
+                        background: "#ffffff",
+                        color: "#111827",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path
+                          d="M15 18l-6-6 6-6"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         />
-                      </div>
+                      </svg>
+                      Change preset
+                    </button>
+                    <InlineStack gap="200">
                       {stepUsesConnector && (
                         <div style={{ width: '80px' }}>
                           <Select 
@@ -1016,6 +1068,7 @@ export default function VisualBuilderStudio() {
                       )}
                     </InlineStack>
                   </InlineStack>
+                  {renderAnimatedIconControls(id, s)}
                   <InspectorSection title="Layout & typography" defaultOpen>
                     <div style={{ touchAction: 'none' }}>
                       <RangeSlider 
@@ -1446,43 +1499,9 @@ export default function VisualBuilderStudio() {
     );
   };
 
-  const renderAnimationPanel = () => {
-    const activeBlock = getActiveBlock();
-    if (!activeBlock) {
-      return (
-        <EmptyState
-          heading="No block selected"
-          image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-        >
-          <Text as="p">Select a layer first.</Text>
-        </EmptyState>
-      );
-    }
-
-    const { id, type, settings: s } = activeBlock;
-    const animatedIconCount = getAnimatedIconsInSettings(s).length;
-
-    return (
-      <BlockStack gap="400">
-        <InlineStack align="space-between" blockAlign="center">
-          <BlockStack gap="100">
-            <Text variant="bodySm" tone="subdued" as="p">SELECTED LAYER</Text>
-            <Text variant="headingMd" as="h3">{getBlockLabel(type)}</Text>
-          </BlockStack>
-          {animatedIconCount > 0 && <Badge tone="success">{`${animatedIconCount} animated`}</Badge>}
-        </InlineStack>
-
-        <Divider />
-
-        {renderAnimatedIconControls(id, s, { showEmpty: true, title: "Animation Settings" })}
-      </BlockStack>
-    );
-  };
-
   const tabs = [
     { id: 'layers', content: 'Layers', accessibilityLabel: 'Layers' },
     { id: 'style', content: 'Global Style', accessibilityLabel: 'Style' },
-    { id: 'animation', content: 'Animation', accessibilityLabel: 'Animation' },
   ];
 
   return (
@@ -1580,7 +1599,47 @@ export default function VisualBuilderStudio() {
         
         {/* ─── LEFT SIDEBAR (Library & Hierarchy) ─────────────────────────────── */}
         <div style={{ width: 300, background: 'white', borderRight: '1px solid #e1e3e5', display: 'flex', flexDirection: 'column' }}>
-          <Tabs tabs={tabs} selected={activeTab} onSelect={setActiveTab} />
+          <div style={{ padding: "8px 16px 0" }}>
+            <div
+              role="tablist"
+              aria-label="Studio sidebar views"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 4,
+                borderRadius: 8,
+                background: "#f1f2f4",
+                padding: 4,
+              }}
+            >
+              {tabs.map((tab, index) => {
+                const selected = activeTab === index;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setActiveTab(index)}
+                    style={{
+                      minHeight: 28,
+                      border: 0,
+                      borderRadius: 6,
+                      background: selected ? "#ffffff" : "transparent",
+                      color: selected ? "#111827" : "#374151",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: selected ? 650 : 500,
+                      lineHeight: "18px",
+                      boxShadow: selected ? "0 1px 2px rgba(15, 23, 42, 0.08)" : "none",
+                    }}
+                  >
+                    {tab.content}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
             {activeTab === 0 && (
@@ -1656,8 +1715,6 @@ export default function VisualBuilderStudio() {
                 </BlockStack>
               </BlockStack>
             )}
-
-            {activeTab === 2 && renderAnimationPanel()}
           </div>
         </div>
 

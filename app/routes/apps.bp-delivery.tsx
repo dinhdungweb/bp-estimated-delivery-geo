@@ -5,6 +5,8 @@ import { authenticate } from "../shopify.server";
 import {
   ALL_COUNTRIES_CODE,
   DEFAULT_SHIPPING_MESSAGE,
+  normalizeLocationPrefixText,
+  normalizeLocationRowAlignment,
   INVENTORY_STATUS_BOTH,
   LEGACY_ALL_COUNTRIES_CODE,
   normalizeCollectionIds,
@@ -291,6 +293,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         bgGradient: selectedWidget.bgGradient,
         showTimeline: selectedWidget.showTimeline,
         showLocationSelector: globalSettings.showLocationSelector,
+        locationPrefixText: normalizeLocationPrefixText(globalSettings.locationPrefixText),
+        showLocationFlag: globalSettings.showLocationFlag,
+        locationRowAlignment: normalizeLocationRowAlignment(globalSettings.locationRowAlignment),
         policyText: selectedWidget.policyText ?? "",
         headerText: selectedWidget.headerText ?? shippingMessage,
         subHeaderText: selectedWidget.subHeaderText,

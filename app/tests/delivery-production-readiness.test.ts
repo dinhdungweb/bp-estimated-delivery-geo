@@ -704,6 +704,55 @@ describe("storefront embed sanitization", () => {
     expect(document.querySelector(".bp-change-link")).toBeNull();
   });
 
+  it("applies location row text flag and alignment settings", async () => {
+    document.body.innerHTML = `
+      <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="vip" style="display:none">
+        <div class="bp-skeleton"></div>
+      </div>
+    `;
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        enabled: true,
+        countryCode: "US",
+        orderDate: "Jan 1",
+        shipDate: "Jan 2",
+        minDate: "Jan 3",
+        maxDate: "Jan 4",
+        shippingMessage: "Arrives {min_date} - {max_date}",
+        settings: {
+          showLocationSelector: true,
+          locationPrefixText: "Ships to",
+          showLocationFlag: false,
+          locationRowAlignment: "center",
+          customBlocks: [
+            {
+              id: "header",
+              type: "header",
+              settings: { text: "Arrives {min_date} - {max_date}" },
+            },
+          ],
+        },
+      }),
+    });
+    (window as unknown as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const script = fs.readFileSync(
+      path.join(process.cwd(), "extensions/bp-estimated-delivery/assets/bp-delivery-embed.js"),
+      "utf8",
+    );
+    window.eval(script);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const row = document.querySelector<HTMLElement>(".bp-location-row");
+    const link = document.querySelector<HTMLButtonElement>(".bp-change-link");
+
+    expect(row?.style.justifyContent).toBe("center");
+    expect(link?.querySelector(".bp-country-link-prefix")?.textContent).toBe("Ships to");
+    expect(link?.querySelector(".bp-country-link-country")?.textContent).toBe("United States");
+    expect(link?.querySelector(".bp-country-flag")).toBeNull();
+  });
+
   it("prefers the explicit app block when both app embed and app block are present", async () => {
     document.body.innerHTML = `
       <div id="bp-delivery-embed-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="" style="display:none">

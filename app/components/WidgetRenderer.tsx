@@ -1,5 +1,8 @@
 import {
   buildFallbackBlocks,
+  DEFAULT_LOCATION_PREFIX_TEXT,
+  normalizeLocationPrefixText,
+  normalizeLocationRowAlignment,
   normalizePolicyItems,
   normalizeStepItems,
   normalizeTrustBadges,
@@ -331,7 +334,14 @@ const PREVIEW_DATA = {
 export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsProps }) {
   const {
     customBlocks, blocks: legacyBlocks, textColor, iconColor, bgColor, borderColor, borderRadius,
-    shadow, glassmorphism, padding = 16, bgGradient, showLocationSelector = true
+    shadow,
+    glassmorphism,
+    padding = 16,
+    bgGradient,
+    showLocationSelector = true,
+    locationPrefixText = DEFAULT_LOCATION_PREFIX_TEXT,
+    showLocationFlag = true,
+    locationRowAlignment = "right",
   } = settings;
 
   const blocks =
@@ -354,31 +364,40 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       .replace(/{COUNTRY_FLAG}/g, PREVIEW_DATA.countryCode);
   };
 
-  const renderLocationControl = () => (
-    <div
-      className="bp-location-row"
-      style={{
-        display: "flex",
-        justifyContent: "flex-end",
-        marginTop: scaledPx(8),
-      }}
-    >
-      <button type="button" className="bp-change-link" aria-label="Preview delivery country">
-        <span className="bp-country-flag">
-          <img
-            className="bp-country-flag-img"
-            src={`https://flagcdn.com/${PREVIEW_DATA.countryCode.toLowerCase()}.svg`}
-            alt={`${PREVIEW_DATA.countryName} flag`}
-            loading="lazy"
-          />
-        </span>
-        <span className="bp-country-link-text">
-          <span className="bp-country-link-prefix">Delivery to</span>
-          <span className="bp-country-link-country">{PREVIEW_DATA.countryName}</span>
-        </span>
-      </button>
-    </div>
-  );
+  const renderLocationControl = () => {
+    const alignment = normalizeLocationRowAlignment(locationRowAlignment);
+    const justifyContent =
+      alignment === "left" ? "flex-start" : alignment === "center" ? "center" : "flex-end";
+    const prefixText = normalizeLocationPrefixText(locationPrefixText);
+
+    return (
+      <div
+        className="bp-location-row"
+        style={{
+          display: "flex",
+          justifyContent,
+          marginTop: scaledPx(8),
+        }}
+      >
+        <button type="button" className="bp-change-link" aria-label="Preview delivery country">
+          {showLocationFlag !== false && (
+            <span className="bp-country-flag">
+              <img
+                className="bp-country-flag-img"
+                src={`https://flagcdn.com/${PREVIEW_DATA.countryCode.toLowerCase()}.svg`}
+                alt={`${PREVIEW_DATA.countryName} flag`}
+                loading="lazy"
+              />
+            </span>
+          )}
+          <span className="bp-country-link-text">
+            <span className="bp-country-link-prefix">{prefixText}</span>
+            <span className="bp-country-link-country">{PREVIEW_DATA.countryName}</span>
+          </span>
+        </button>
+      </div>
+    );
+  };
 
   const blockIconColor = (s: any) => s.iconColor || s.blockIconColor || iconColor;
 

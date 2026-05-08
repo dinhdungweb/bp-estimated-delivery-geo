@@ -2,6 +2,21 @@ import type { DeliveryRule, Prisma, Widget } from "@prisma/client";
 
 export const ALL_COUNTRIES_CODE = "ALL";
 export const LEGACY_ALL_COUNTRIES_CODE = "OTHER";
+export const DEFAULT_LOCATION_PREFIX_TEXT = "Delivery to";
+export const DEFAULT_LOCATION_ROW_ALIGNMENT = "right";
+
+export type LocationRowAlignment = "left" | "center" | "right";
+
+export function normalizeLocationPrefixText(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return text ? text.slice(0, 80) : DEFAULT_LOCATION_PREFIX_TEXT;
+}
+
+export function normalizeLocationRowAlignment(value: unknown): LocationRowAlignment {
+  return value === "left" || value === "center" || value === "right"
+    ? value
+    : DEFAULT_LOCATION_ROW_ALIGNMENT;
+}
 
 export function isAllCountriesCode(value: unknown): boolean {
   const country = String(value ?? "").trim().toUpperCase();
@@ -142,6 +157,9 @@ export interface WidgetSettingsProps {
   bgGradient?: string | null;
   showTimeline?: boolean;
   showLocationSelector?: boolean;
+  locationPrefixText?: string | null;
+  showLocationFlag?: boolean;
+  locationRowAlignment?: LocationRowAlignment | string | null;
   policyText?: string | null;
 }
 

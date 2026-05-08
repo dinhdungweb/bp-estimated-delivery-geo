@@ -14,7 +14,7 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import { authenticate } from "../shopify.server";
@@ -24,6 +24,9 @@ import { hydrateBlocksForTemplate } from "../lib/widgetStyleSamples";
 import {
   buildFallbackBlocks,
   DEFAULT_SHIPPING_MESSAGE,
+  DEFAULT_LOCATION_PREFIX_TEXT,
+  normalizeLocationPrefixText,
+  normalizeLocationRowAlignment,
   type BlockConfig,
   type WidgetSettingsProps,
 } from "../lib/delivery";
@@ -154,6 +157,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return routerData({
     showLocationSelector: appSetting?.showLocationSelector ?? true,
+    locationPrefixText: normalizeLocationPrefixText(appSetting?.locationPrefixText),
+    showLocationFlag: appSetting?.showLocationFlag ?? true,
+    locationRowAlignment: normalizeLocationRowAlignment(appSetting?.locationRowAlignment),
     widgets: widgets.map((widget) => ({
       ...widget,
       updatedAt: widget.updatedAt.toISOString(),
@@ -609,11 +615,17 @@ const WIDGET_TEMPLATES: TemplateMeta[] = [
 function TemplateCard({
   template,
   showLocationSelector,
+  locationPrefixText,
+  showLocationFlag,
+  locationRowAlignment,
   isSubmitting,
   onUseTemplate,
 }: {
   template: TemplateMeta;
   showLocationSelector: boolean;
+  locationPrefixText: string;
+  showLocationFlag: boolean;
+  locationRowAlignment: string;
   isSubmitting: boolean;
   onUseTemplate: (template: TemplateMeta) => void;
 }) {
@@ -627,7 +639,16 @@ function TemplateCard({
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="p-4">
         <div className="rounded-xl bg-gray-50 p-2">
-          <WidgetPreviewRenderer settings={{ ...previewSettings, shadow: "none", showLocationSelector }} />
+          <WidgetPreviewRenderer
+            settings={{
+              ...previewSettings,
+              shadow: "none",
+              showLocationSelector,
+              locationPrefixText,
+              showLocationFlag,
+              locationRowAlignment,
+            }}
+          />
         </div>
       </div>
 
@@ -684,6 +705,9 @@ function widgetPreviewSettings(widget: SavedWidget): WidgetSettingsProps {
 function MyDesignCard({
   widget,
   showLocationSelector,
+  locationPrefixText,
+  showLocationFlag,
+  locationRowAlignment,
   isSubmitting,
   isDeleting,
   onCustomize,
@@ -692,6 +716,9 @@ function MyDesignCard({
 }: {
   widget: SavedWidget;
   showLocationSelector: boolean;
+  locationPrefixText: string;
+  showLocationFlag: boolean;
+  locationRowAlignment: string;
   isSubmitting: boolean;
   isDeleting: boolean;
   onCustomize: (widgetId: string) => void;
@@ -710,7 +737,16 @@ function MyDesignCard({
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="p-4">
         <div className="rounded-xl bg-gray-50 p-2">
-          <WidgetPreviewRenderer settings={{ ...settings, shadow: "none", showLocationSelector }} />
+          <WidgetPreviewRenderer
+            settings={{
+              ...settings,
+              shadow: "none",
+              showLocationSelector,
+              locationPrefixText,
+              showLocationFlag,
+              locationRowAlignment,
+            }}
+          />
         </div>
       </div>
 
@@ -818,11 +854,17 @@ function NewDesignCard({
 }
 
 export default function TemplateBuilder() {
-  const { widgets, showLocationSelector } = useLoaderData<typeof loader>();
+  const {
+    widgets,
+    showLocationSelector,
+    locationPrefixText = DEFAULT_LOCATION_PREFIX_TEXT,
+    showLocationFlag = true,
+    locationRowAlignment = "right",
+  } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const actionData = useActionData() as ActionResult | undefined;
   const [activeMainTab, setActiveMainTab] = useState<TemplateMainTab>(
     searchParams.get("tab") === "my-design" ? "My design" : "General",
@@ -830,6 +872,20 @@ export default function TemplateBuilder() {
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>("Animated");
   const [pendingStyle, setPendingStyle] = useState<TemplateId | null>(null);
   const designSaved = searchParams.get("designSaved") === "1";
+  const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  const showToast = useCallback((message: string, isError = false) => {
+    const shopify = (globalThis as unknown as {
+      shopify?: { toast?: { show?: (message: string, options?: { isError?: boolean }) => void } };
+    }).shopify;
+
+    if (shopify?.toast?.show) {
+      shopify.toast.show(message, { isError });
+      return;
+    }
+
+    setToast({ message, isError });
+  }, []);
 
   const visibleTemplates = useMemo(
     () => WIDGET_TEMPLATES.filter((template) => template.category === activeCategory),
@@ -872,8 +928,62 @@ export default function TemplateBuilder() {
   const isCreatingDesign = isSubmitting && navigation.formData?.get("intent") === "create-design";
   const isDeletingDesign = isSubmitting && navigation.formData?.get("intent") === "delete-design";
 
+  useEffect(() => {
+    if (!designSaved) return;
+    showToast("Design saved to My design.");
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("designSaved");
+    setSearchParams(nextParams, { replace: true });
+  }, [designSaved, searchParams, setSearchParams, showToast]);
+
+  useEffect(() => {
+    if (navigation.state !== "idle") return;
+    if (actionData?.error) {
+      showToast(actionData.error, true);
+      return;
+    }
+    if (actionData?.success && actionData.deletedDesignName) {
+      showToast(`${actionData.deletedDesignName} was removed from My Design.`);
+    }
+  }, [actionData, navigation.state, showToast]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
+      {toast && (
+        <div
+          className={`fixed right-5 top-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border bg-white shadow-xl ${
+            toast.isError ? "border-red-200" : "border-green-200"
+          }`}
+        >
+          <div className="flex items-start gap-3 p-4">
+            <span
+              className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                toast.isError ? "bg-red-500" : "bg-green-500"
+              }`}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-gray-900">{toast.message}</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">
+                {toast.isError ? "Please try again." : "Your design changes are now reflected."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="text-xs font-bold text-gray-400 transition-colors hover:text-gray-900"
+              aria-label="Dismiss notification"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div className="space-y-1">
@@ -891,24 +1001,6 @@ export default function TemplateBuilder() {
               : `${widgets.length} designs`}
           </div>
         </div>
-
-        {actionData?.error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
-            {actionData.error}
-          </div>
-        )}
-
-        {designSaved && activeMainTab === "My design" && (
-          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 shadow-sm">
-            Design saved to My design.
-          </div>
-        )}
-
-        {actionData?.success && actionData.deletedDesignName && (
-          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 shadow-sm">
-            {actionData.deletedDesignName} was removed from My Design.
-          </div>
-        )}
 
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="grid grid-cols-2 border-b border-gray-200">
@@ -960,6 +1052,9 @@ export default function TemplateBuilder() {
                 key={template.style}
                 template={template}
                 showLocationSelector={showLocationSelector}
+                locationPrefixText={locationPrefixText}
+                showLocationFlag={showLocationFlag}
+                locationRowAlignment={locationRowAlignment}
                 isSubmitting={isSubmitting && pendingStyle === template.style}
                 onUseTemplate={handleUseTemplate}
               />
@@ -973,6 +1068,9 @@ export default function TemplateBuilder() {
                 key={widget.id}
                 widget={widget}
                 showLocationSelector={showLocationSelector}
+                locationPrefixText={locationPrefixText}
+                showLocationFlag={showLocationFlag}
+                locationRowAlignment={locationRowAlignment}
                 isSubmitting={isSubmitting && navigation.formData?.get("widgetId") === widget.id}
                 isDeleting={isDeletingDesign && navigation.formData?.get("widgetId") === widget.id}
                 onCustomize={(widgetId) => navigate(`/app/widgets/${widgetId}`)}

@@ -500,12 +500,18 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           step1Label: "Order On",
           step1SubText: "{order_date}",
           step1Icon: "cart",
+          step1DotColor: "#f9fafb",
+          step1IconColor: "#1f2937",
           step2Label: "Production",
           step2SubText: "{ship_date}",
           step2Icon: "rocket",
+          step2DotColor: "#f9fafb",
+          step2IconColor: "#1f2937",
           step3Label: "Delivered",
           step3SubText: "{max_date}",
-          step3Icon: "map_pin"
+          step3Icon: "map_pin",
+          step3DotColor: "#f9fafb",
+          step3IconColor: "#1f2937"
         }
       }
     ]
@@ -1575,6 +1581,7 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           styleType: "title_banner",
           bgColor: "#dc2626",
           textColor: "#ffffff",
+          subTextColor: "#fee2e2",
           align: "center",
           padding: 14
         }
@@ -1591,12 +1598,15 @@ export const TEMPLATE_DEFAULTS: Record<string, WidgetSettingsProps> = {
           step1Label: "Gift ordered",
           step1SubText: "{order_date}",
           step1Icon: "heart",
+          step1SubTextColor: "#166534",
           step2Label: "Wrapped",
           step2SubText: "{ship_date}",
           step2Icon: "package",
+          step2SubTextColor: "#166534",
           step3Label: "Delivered",
           step3SubText: "{max_date}",
-          step3Icon: "store"
+          step3Icon: "store",
+          step3SubTextColor: "#166534"
         }
       }
     ]

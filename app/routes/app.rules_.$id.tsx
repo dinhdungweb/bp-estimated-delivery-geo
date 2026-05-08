@@ -35,6 +35,8 @@ import {
   INVENTORY_STATUS_OPTIONS,
   inventoryStatusLabel,
   isAllCountriesCode,
+  normalizeLocationPrefixText,
+  normalizeLocationRowAlignment,
   normalizeCutoffTime,
   normalizeDateLocale,
   normalizeHolidayDates,
@@ -978,6 +980,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     })),
     shop: session.shop,
     showLocationSelector: appSetting.showLocationSelector,
+    locationPrefixText: normalizeLocationPrefixText(appSetting.locationPrefixText),
+    showLocationFlag: appSetting.showLocationFlag,
+    locationRowAlignment: normalizeLocationRowAlignment(appSetting.locationRowAlignment),
     defaultWidgetId: rule?.widgetId || selectedWidgetId || defaultWidget.id,
     templateApplied: url.searchParams.get("templateApplied") === "1",
     sourceDesignId: url.searchParams.get("sourceDesignId") || "",
@@ -1239,6 +1244,9 @@ export default function RuleEditorPage() {
     savedWidgets,
     shop,
     showLocationSelector,
+    locationPrefixText,
+    showLocationFlag,
+    locationRowAlignment,
     defaultWidgetId,
     templateApplied,
     sourceDesignId,
@@ -1330,6 +1338,12 @@ export default function RuleEditorPage() {
   const selectedWidget = useMemo(() => {
     return typedWidgets.find((widget) => widget.id === widgetId) || typedWidgets[0];
   }, [typedWidgets, widgetId]);
+  const locationRowPreviewSettings = {
+    showLocationSelector,
+    locationPrefixText,
+    showLocationFlag,
+    locationRowAlignment,
+  };
 
   useEffect(() => {
     setLocalWidgets(widgets as RuleEditorWidget[]);
@@ -1810,7 +1824,7 @@ export default function RuleEditorPage() {
                             ...selectedWidget,
                             style: "custom",
                             customBlocks: parseBlockConfigs(selectedWidget.customBlocks),
-                            showLocationSelector,
+                            ...locationRowPreviewSettings,
                             isActive: true,
                           }}
                         />
@@ -1880,8 +1894,8 @@ export default function RuleEditorPage() {
                 </div>
                 <div className="grid w-full gap-2 rounded-2xl border border-gray-100 bg-white p-1 md:w-[420px] md:grid-cols-3">
                 {[
-                  { id: "product", label: "Product" },
-                  { id: "collection", label: "Collection" },
+                  { id: "product", label: "Products" },
+                  { id: "collection", label: "Collections" },
                   { id: "tag", label: "Product tags" },
                 ].map((option) => (
                   <button
@@ -2188,11 +2202,19 @@ export default function RuleEditorPage() {
                   Open Theme Editor
                 </button>
               </div>
-              <div className="p-6">
+              <div className="space-y-4 p-6">
                 <div className="rounded-xl border border-green-100 bg-green-50 p-4">
                   <p className="text-[11px] font-medium leading-relaxed text-green-800">
                     <b>Tip:</b> After opening the editor, add the <b>"BP: Estimated Delivery"</b> block to your Product template.
                   </p>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                  <img
+                    src="/add-block-to-product-sample.jpeg"
+                    alt="Add BP Estimated Delivery block to the Product template"
+                    loading="lazy"
+                    className="block w-full object-cover"
+                  />
                 </div>
               </div>
             </div>
@@ -2242,7 +2264,7 @@ export default function RuleEditorPage() {
                           ...selectedWidget,
                           style: "custom",
                           customBlocks: parseBlockConfigs(selectedWidget.customBlocks),
-                          showLocationSelector,
+                          ...locationRowPreviewSettings,
                           isActive: true,
                         }}
                       />
@@ -2375,7 +2397,13 @@ export default function RuleEditorPage() {
                         >
                           <div className="p-4">
                             <div className="rounded-xl bg-gray-50 p-2">
-                              <WidgetPreviewRenderer settings={{ ...previewSettings, shadow: "none" }} />
+                              <WidgetPreviewRenderer
+                                settings={{
+                                  ...previewSettings,
+                                  shadow: "none",
+                                  ...locationRowPreviewSettings,
+                                }}
+                              />
                             </div>
                           </div>
                           <div className="mt-auto border-t border-gray-100 p-4">
@@ -2432,7 +2460,13 @@ export default function RuleEditorPage() {
                         >
                           <div className="p-4">
                             <div className="rounded-xl bg-gray-50 p-2">
-                              <WidgetPreviewRenderer settings={{ ...settings, shadow: "none" }} />
+                              <WidgetPreviewRenderer
+                                settings={{
+                                  ...settings,
+                                  shadow: "none",
+                                  ...locationRowPreviewSettings,
+                                }}
+                              />
                             </div>
                           </div>
                           <div className="mt-auto border-t border-gray-100 p-4">

@@ -185,6 +185,8 @@
   var ICON_PATH = /^\/icons\/(?:delivery|ordered|shipped)\/[a-z0-9-]+\.png$/i;
   var COUNTRY_STORAGE_KEY = "bpDeliveryCountry";
   var FLAG_CDN_BASE = "https://flagcdn.com/";
+  var DEFAULT_LOCATION_PREFIX_TEXT = "Delivery to";
+  var DEFAULT_LOCATION_ROW_ALIGNMENT = "right";
   var COUNTRY_OPTIONS = [
     "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AR", "AS", "AT", "AU", "AW", "AX", "AZ", "BA",
     "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT",
@@ -418,6 +420,24 @@
     return flag;
   }
 
+  function locationPrefixText(value) {
+    var prefix = text(value).trim();
+    return prefix ? prefix.slice(0, 80) : DEFAULT_LOCATION_PREFIX_TEXT;
+  }
+
+  function locationRowAlignment(value) {
+    return value === "left" || value === "center" || value === "right"
+      ? value
+      : DEFAULT_LOCATION_ROW_ALIGNMENT;
+  }
+
+  function locationRowJustifyContent(value) {
+    var alignment = locationRowAlignment(value);
+    if (alignment === "left") return "flex-start";
+    if (alignment === "center") return "center";
+    return "flex-end";
+  }
+
   function countryOptionLabel(value) {
     var country = normalizeCountry(value);
     if (!country) return "Select country";
@@ -425,7 +445,8 @@
     return country + " - " + countryDisplayName(country) + (currency ? " (" + currency + ")" : "");
   }
 
-  function renderCountryLinkContent(button, value) {
+  function renderCountryLinkContent(button, value, options) {
+    options = options || {};
     var country = normalizeCountry(value);
     button.replaceChildren();
     if (!country) {
@@ -433,18 +454,22 @@
       return;
     }
     if (country === "ALL") {
-      var globe = createCountryFlagNode(country);
-      if (globe) button.appendChild(globe);
+      if (options.showFlag !== false) {
+        var globe = createCountryFlagNode(country);
+        if (globe) button.appendChild(globe);
+      }
       var worldwideText = el("span", "bp-country-link-text");
       worldwideText.textContent = "Worldwide delivery";
       button.appendChild(worldwideText);
       return;
     }
-    var flag = createCountryFlagNode(country);
-    if (flag) button.appendChild(flag);
+    if (options.showFlag !== false) {
+      var flag = createCountryFlagNode(country);
+      if (flag) button.appendChild(flag);
+    }
     var label = el("span", "bp-country-link-text");
     var prefix = el("span", "bp-country-link-prefix");
-    prefix.textContent = "Delivery to";
+    prefix.textContent = locationPrefixText(options.prefixText);
     label.appendChild(prefix);
     var countryName = el("span", "bp-country-link-country");
     countryName.textContent = countryDisplayName(country);
@@ -1487,15 +1512,19 @@
 
   function renderLocationControl(config) {
     var countryCode = normalizeCountry(config.countryCode) || lastResolvedCountry || savedCountry();
+    var settings = config.settings || {};
     var row = el("div", "bp-location-row");
     row.style.display = "flex";
-    row.style.justifyContent = "flex-end";
+    row.style.justifyContent = locationRowJustifyContent(settings.locationRowAlignment);
     row.style.marginTop = scaledPx(8);
 
     var button = document.createElement("button");
     button.type = "button";
     button.className = "bp-change-link";
-    renderCountryLinkContent(button, countryCode);
+    renderCountryLinkContent(button, countryCode, {
+      prefixText: settings.locationPrefixText,
+      showFlag: settings.showLocationFlag
+    });
     button.addEventListener("click", openCountryModal);
     row.appendChild(button);
     return row;

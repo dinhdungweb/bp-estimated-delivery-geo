@@ -105,6 +105,9 @@ model AppSetting {
   bgGradient    String?
   showTimeline  Boolean  @default(true)
   showLocationSelector Boolean @default(true)
+  locationPrefixText    String  @default("Delivery to")
+  showLocationFlag      Boolean @default(true)
+  locationRowAlignment  String  @default("right")
   policyText    String?  @db.Text
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

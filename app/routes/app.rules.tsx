@@ -634,7 +634,7 @@ export default function RulesPage() {
                     return (
                         <tr
                           key={rule.id}
-                          className={`align-top transition-colors hover:bg-gray-50/80 ${
+                          className={`align-middle transition-colors hover:bg-gray-50/80 ${
                             selectedIdSet.has(rule.id) ? "bg-gray-50" : ""
                           }`}
                         >
@@ -649,30 +649,30 @@ export default function RulesPage() {
                               />
                             </div>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-5 py-4 align-middle">
                             <p className="max-w-[220px] truncate text-sm font-bold text-gray-900">
                               {rule.ruleName || "Delivery rule"}
                             </p>
                             <p className="mt-1 text-xs text-gray-400">Rule ID: {rule.id.slice(0, 8)}</p>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-5 py-4 align-middle">
                             <p className="text-sm font-bold text-gray-900">{country.label}</p>
                             <p className="mt-1 max-w-[220px] truncate text-xs text-gray-400">{country.detail}</p>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-5 py-4 align-middle">
                             <p className="text-sm font-bold text-gray-800">{rule.widgetName || "Default Widget"}</p>
                             <p className="mt-1 text-xs text-gray-400">
                               {rule.widgetId ? "Rule design" : "Fallback default"}
                             </p>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-5 py-4 align-middle">
                             <div className="space-y-1 text-xs text-gray-500">
                               <p className="font-semibold text-gray-700">{targeting.label}</p>
                               <p className="max-w-[260px] truncate">{targeting.value}</p>
                               <p className="text-gray-400">Inventory: {inventoryStatusLabel(rule.inventoryStatus)}</p>
                             </div>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-5 py-4 align-middle">
                             <div className="space-y-1">
                               <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">
                                 {daysLabel(rule.minDays)} - {daysLabel(rule.maxDays)}
@@ -680,7 +680,7 @@ export default function RulesPage() {
                               <p className="text-xs text-gray-500">Processing: {daysLabel(rule.processingDays)}</p>
                             </div>
                           </td>
-                          <td className="max-w-xl px-5 py-4">
+                          <td className="max-w-xl px-5 py-4 align-middle">
                             <p className="line-clamp-2 text-sm font-medium text-gray-700">{rule.shippingMessage}</p>
                             <p className="mt-1 line-clamp-1 text-xs text-gray-400">
                               Preview: {previewRuleMessage(rule.shippingMessage)}
