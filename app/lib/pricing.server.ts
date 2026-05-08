@@ -164,3 +164,20 @@ export function pricingReturnUrl(request: Request, search = "billing=success") {
   }
   return url.toString();
 }
+
+export function shopHandleFromShopDomain(shop: string) {
+  return shop.replace(/\.myshopify\.com$/i, "").trim();
+}
+
+export function managedPricingAppHandle() {
+  return (process.env.SHOPIFY_MANAGED_PRICING_HANDLE || "").trim();
+}
+
+export function managedPricingUrlForShop(shop: string) {
+  const appHandle = managedPricingAppHandle();
+  const storeHandle = shopHandleFromShopDomain(shop);
+
+  if (!appHandle || !storeHandle) return null;
+
+  return `https://admin.shopify.com/store/${encodeURIComponent(storeHandle)}/charges/${encodeURIComponent(appHandle)}/pricing_plans`;
+}
