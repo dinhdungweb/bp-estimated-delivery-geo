@@ -16,9 +16,12 @@ import {
   ChatIcon,
   CalendarIcon
 } from "@shopify/polaris-icons";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { LockGlyph, UpgradePlanModal } from "../components/UpgradePlanModal";
 import { authenticate, apiVersion } from "../shopify.server";
 import prisma from "../db.server";
+import { limitLabel } from "../lib/pricing";
+import { syncCurrentPlanForShop } from "../lib/pricing.server";
 
 type AdminGraphqlClient = {
   graphql: (
@@ -171,12 +174,14 @@ async function getThemeEmbedStatus(
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session, admin, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const [widget, totalRules, appSetting, themeEmbedCheck] = await Promise.all([
+  const currentPlan = await syncCurrentPlanForShop(shop, billing);
+  const [widget, totalRules, activeRuleCount, appSetting, themeEmbedCheck] = await Promise.all([
     prisma.widget.findFirst({ where: { shop, isDefault: true } }),
     prisma.deliveryRule.count({ where: { shop } }),
+    prisma.deliveryRule.count({ where: { shop, isActive: true } }),
     prisma.appSetting.findUnique({ where: { shop } }),
     getThemeEmbedStatus(admin, shop, session.accessToken || ""),
   ]);
@@ -185,6 +190,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     widget,
     totalRules,
+    activeRuleCount,
+    activeRuleLimit: currentPlan.plan.limits.activeRules,
+    currentPlan,
     isEnabled: appSetting?.isEnabled ?? false,
     appSetting,
     themeEmbedStatus: themeEmbedCheck.status,
@@ -193,11 +201,32 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function DashboardHome() {
-  const { shop, widget, totalRules, isEnabled, themeEmbedStatus, themeEmbedCheckReason } = useLoaderData<typeof loader>();
+  const {
+    shop,
+    widget,
+    totalRules,
+    activeRuleCount,
+    activeRuleLimit,
+    currentPlan,
+    isEnabled,
+    themeEmbedStatus,
+    themeEmbedCheckReason,
+  } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [expandedStep, setExpandedStep] = useState<number | null>(0);
   const etaConfirmationKey = `bp-eta-confirmed:${shop}`;
   const [etaConfirmed, setEtaConfirmed] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const activeRuleLimitReached = activeRuleLimit !== null && activeRuleCount >= activeRuleLimit;
+
+  const handleNewRule = useCallback(() => {
+    if (activeRuleLimitReached) {
+      setUpgradeModalOpen(true);
+      return;
+    }
+
+    navigate("/app/rules/new");
+  }, [activeRuleLimitReached, navigate]);
 
   useEffect(() => {
     setEtaConfirmed(window.localStorage.getItem(etaConfirmationKey) === "true");
@@ -269,6 +298,14 @@ export default function DashboardHome() {
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
+      <UpgradePlanModal
+        open={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        featureName="Add more delivery rules"
+        currentPlanName={currentPlan.plan.name}
+        message={`Your ${currentPlan.plan.name} plan includes ${limitLabel(activeRuleLimit)} active delivery rule${activeRuleLimit === 1 ? "" : "s"}. Upgrade to add more active storefront rules.`}
+        upgradeUrl="/app/pricing?upgrade=rules"
+      />
       <div className="mx-auto max-w-6xl space-y-4">
         {/* HEADER */}
         <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -282,10 +319,15 @@ export default function DashboardHome() {
            <div className="flex flex-wrap items-center gap-3">
               <button 
                 type="button"
-                onClick={() => navigate("/app/rules/new")}
+                onClick={handleNewRule}
                 className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-3 text-xs font-bold text-white shadow-md transition-all hover:bg-black"
               >
-                <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div> New Rule
+                {activeRuleLimitReached ? (
+                  <LockGlyph className="h-4 w-4 text-white" />
+                ) : (
+                  <div className="w-4 h-4 text-white"><Icon source={PlusIcon} /></div>
+                )}
+                {activeRuleLimitReached ? "Upgrade to add rule" : "New Rule"}
               </button>
            </div>
         </div>

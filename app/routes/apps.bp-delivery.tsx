@@ -3,6 +3,13 @@ import { data } from "react-router";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import {
+  activeRuleOrderBy,
+  canServeRule,
+  canUseRuleFeatureSet,
+  eligibleRuleRankMap,
+  planByHandle,
+} from "../lib/pricing";
+import {
   ALL_COUNTRIES_CODE,
   DEFAULT_SHIPPING_MESSAGE,
   normalizeLocationPrefixText,
@@ -217,7 +224,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ? [INVENTORY_STATUS_BOTH]
     : [INVENTORY_STATUS_BOTH, productInventoryStatus];
 
-  const [rules, defaultWidget, globalSettings] = await Promise.all([
+  const [rules, defaultWidget, globalSettings, activeRuleOrder] = await Promise.all([
     prisma.deliveryRule.findMany({
       where: {
         shop,
@@ -232,18 +239,40 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       where: { shop, isActive: true, isDefault: true },
     }),
     prisma.appSetting.findUnique({ where: { shop } }),
+    prisma.deliveryRule.findMany({
+      where: { shop, isActive: true },
+      orderBy: activeRuleOrderBy(),
+      include: { widget: true },
+    }),
   ]);
+  const currentPlan = planByHandle(globalSettings?.planHandle || "free");
+  const activeRuleRank = eligibleRuleRankMap(activeRuleOrder, (rule) => {
+    const selectedWidget = rule.widget?.isActive ? rule.widget : defaultWidget;
+    return canUseRuleFeatureSet(currentPlan, rule, selectedWidget);
+  });
+  const eligibleRules = rules.filter((rule) => {
+    const selectedWidget = rule.widget?.isActive ? rule.widget : defaultWidget;
+    const rank = activeRuleRank.get(rule.id) ?? Number.MAX_SAFE_INTEGER;
+    return canServeRule(currentPlan, rule, selectedWidget, rank);
+  });
 
   const rule = selectDeliveryRule(
-    rules,
+    eligibleRules,
     countryCode,
     productTags,
     productId,
     productCollectionIds,
     productInventoryStatus,
   );
-  if (!globalSettings?.isEnabled || !rule || normalizeVisibilityMode(rule.visibilityMode) === "hidden") {
+  if (!globalSettings?.isEnabled || normalizeVisibilityMode(rule?.visibilityMode) === "hidden") {
     return disabledResponse(countryCode, "disabled_or_missing_config");
+  }
+
+  if (!rule) {
+    return disabledResponse(
+      countryCode,
+      rules.length > 0 ? "plan_limit" : "disabled_or_missing_config",
+    );
   }
 
   const selectedWidget = rule.widget?.isActive ? rule.widget : defaultWidget;

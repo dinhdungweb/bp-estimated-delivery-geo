@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { saveWidgetStudio } from "../lib/widgetStudio.server";
 import type { WidgetStudioDb } from "../lib/widgetStudio.server";
+import { PRICING_PLANS } from "../lib/pricing";
 
 type FakeDbResult = {
   created: Record<string, unknown>[];
@@ -58,7 +59,7 @@ function createDb({ sourceExists = true } = {}): FakeDbResult {
           return row;
         }),
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
-          sourceExists ? { id: where.id } : null,
+          sourceExists ? { id: where.id, customBlocks: [], requiredPlan: "free" } : null,
         ),
         update: vi.fn(async (args: Record<string, unknown>) => {
           updates.push(args);
@@ -89,6 +90,7 @@ describe("saveWidgetStudio", () => {
       id: "default-widget",
       requestUrl: "https://example.com/app/widgets/default-widget",
       shop: "test-shop.myshopify.com",
+      currentPlan: PRICING_PLANS.scale,
     });
 
     expect(result).toMatchObject({
@@ -119,6 +121,7 @@ describe("saveWidgetStudio", () => {
       id: "default-widget",
       requestUrl: "https://example.com/app/widgets/default-widget",
       shop: "test-shop.myshopify.com",
+      currentPlan: PRICING_PLANS.scale,
     });
 
     expect(result).toMatchObject({
@@ -145,12 +148,38 @@ describe("saveWidgetStudio", () => {
       id: "default-widget",
       requestUrl: "https://example.com/app/widgets/default-widget",
       shop: "test-shop.myshopify.com",
+      currentPlan: PRICING_PLANS.scale,
     });
 
     expect(result).toMatchObject({
       error: "Invalid widget payload",
       status: 400,
     });
+    expect(created).toHaveLength(0);
+    expect(updateMany).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+
+  it("blocks premium step presets on the Free plan", async () => {
+    const { created, db, updateMany, updates } = createDb();
+
+    const result = await saveWidgetStudio({
+      db,
+      formData: makeFormData({
+        customBlocks: JSON.stringify([
+          { id: "steps", type: "steps", settings: { preset: "boxed_cards" } },
+        ]),
+      }),
+      id: "default-widget",
+      requestUrl: "https://example.com/app/widgets/default-widget",
+      shop: "test-shop.myshopify.com",
+      currentPlan: PRICING_PLANS.free,
+    });
+
+    expect(result).toMatchObject({
+      status: 403,
+    });
+    expect(result.error).toContain("Growth plan");
     expect(created).toHaveLength(0);
     expect(updateMany).toHaveLength(0);
     expect(updates).toHaveLength(0);

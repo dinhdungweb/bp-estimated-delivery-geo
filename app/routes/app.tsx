@@ -51,6 +51,7 @@ export default function App() {
           <s-link href="/app/analytics">Analytics</s-link>
           <s-link href="/app/rules">Delivery Rules</s-link>
           <s-link href="/app/templates">Templates</s-link>
+          <s-link href="/app/pricing">Pricing</s-link>
           <s-link href="/app/settings">Settings</s-link>
         </s-app-nav>
         <Outlet />

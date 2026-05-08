@@ -27,6 +27,8 @@ export function widgetCopyData(
     isActive,
     isReusable,
     sourceWidgetId,
+    sourceTemplateId: source.sourceTemplateId,
+    requiredPlan: source.requiredPlan,
     targetCountries: jsonField(source.targetCountries),
     targetProducts: jsonField(source.targetProducts),
     targetTags: jsonField(source.targetTags),

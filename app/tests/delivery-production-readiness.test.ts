@@ -30,6 +30,8 @@ function widget(overrides: Partial<Widget>): Widget {
     isActive: true,
     isReusable: true,
     sourceWidgetId: null,
+    sourceTemplateId: null,
+    requiredPlan: "free",
     targetCountries: null,
     targetProducts: null,
     targetTags: null,

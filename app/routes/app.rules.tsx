@@ -16,6 +16,7 @@ import {
 import { Badge, Banner, Icon } from "@shopify/polaris";
 import { DeleteIcon, EditIcon, InfoIcon } from "@shopify/polaris-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LockGlyph, UpgradePlanModal } from "../components/UpgradePlanModal";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
@@ -33,6 +34,17 @@ import {
   RULE_COUNTRIES,
 } from "../lib/deliveryRules";
 import { ensureDefaultWidget } from "../lib/deliveryRules.server";
+import {
+  activeRuleOrderBy,
+  canEditWidget,
+  canServeRule,
+  canUseRuleFeatureSet,
+  eligibleRuleRankMap,
+  getRequiredPlanForWidget,
+  limitExceeded,
+  limitLabel,
+} from "../lib/pricing";
+import { syncCurrentPlanForShop } from "../lib/pricing.server";
 
 type RuleRow = {
   id: string;
@@ -52,11 +64,21 @@ type RuleRow = {
   processingDays: number;
   shippingMessage: string;
   isActive: boolean;
+  storefrontStatus: "Served" | "Draft" | "Over plan limit" | "Premium design locked" | "Requires Shopify Markets";
+  storefrontTone: "success" | "attention" | "critical" | "warning";
 };
 
 type ActionResult = {
   success?: boolean;
   error?: string;
+};
+
+type UpgradeModalState = {
+  open: boolean;
+  featureName?: string;
+  requiredPlanName?: string;
+  message?: string;
+  upgradeUrl?: string;
 };
 
 async function deleteRulesAndOrphanRuleDesigns(shop: string, ids: string[]) {
@@ -162,10 +184,35 @@ function ruleCountrySummary(rule: Pick<RuleRow, "countryCode" | "targetCountries
   };
 }
 
+function storefrontStatusLabel(status: RuleRow["storefrontStatus"]) {
+  return status === "Premium design locked" ? "Locked" : status;
+}
+
+function storefrontStatusTooltip(status: RuleRow["storefrontStatus"]) {
+  if (status === "Premium design locked") {
+    return "Locked because this rule uses a design with premium components that are not included in the current plan. Upgrade or choose a basic design to serve it.";
+  }
+
+  if (status === "Over plan limit") {
+    return "This active rule is outside the current plan limit and will not be served on the storefront.";
+  }
+
+  if (status === "Requires Shopify Markets") {
+    return "This rule uses Shopify Markets targeting, which requires the Pro plan or higher.";
+  }
+
+  if (status === "Served") {
+    return "This rule is eligible to be served on the storefront.";
+  }
+
+  return "Draft rules are saved but not served on the storefront.";
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const url = new URL(request.url);
   await ensureDefaultWidget(session.shop);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const query = (url.searchParams.get("q") || "").trim().slice(0, 120);
   const rawStatus = url.searchParams.get("status") || "all";
   const status = STATUS_FILTERS.has(rawStatus) ? rawStatus : "all";
@@ -182,24 +229,64 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   const requestedPage = Math.max(1, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1);
-  const totalRules = await prisma.deliveryRule.count({
-    where,
-  });
+  const [totalRules, activeRuleCount] = await Promise.all([
+    prisma.deliveryRule.count({ where }),
+    prisma.deliveryRule.count({ where: { shop: session.shop, isActive: true } }),
+  ]);
   const totalPages = Math.max(1, Math.ceil(totalRules / RULES_PER_PAGE));
   const currentPage = Math.min(requestedPage, totalPages);
 
-  const rules = await prisma.deliveryRule.findMany({
-    where,
-    orderBy: [{ isActive: "desc" }, { countryCode: "asc" }, { createdAt: "desc" }],
-    skip: (currentPage - 1) * RULES_PER_PAGE,
-    take: RULES_PER_PAGE,
-    include: { widget: { select: { id: true, name: true, isDefault: true, isActive: true } } },
-  });
+  const [rules, activeRuleOrder, defaultWidget] = await Promise.all([
+    prisma.deliveryRule.findMany({
+      where,
+      orderBy: [{ isActive: "desc" }, { countryCode: "asc" }, { createdAt: "desc" }],
+      skip: (currentPage - 1) * RULES_PER_PAGE,
+      take: RULES_PER_PAGE,
+      include: { widget: { select: { id: true, name: true, isDefault: true, isActive: true, customBlocks: true, requiredPlan: true } } },
+    }),
+    prisma.deliveryRule.findMany({
+      where: { shop: session.shop, isActive: true },
+      orderBy: activeRuleOrderBy(),
+      select: {
+        id: true,
+        marketId: true,
+        isActive: true,
+        widget: { select: { isActive: true, customBlocks: true, requiredPlan: true } },
+      },
+    }),
+    prisma.widget.findFirst({
+      where: { shop: session.shop, isActive: true, isDefault: true },
+      select: { customBlocks: true, requiredPlan: true },
+    }),
+  ]);
+  const widgetForRule = (widget: { isActive?: boolean; customBlocks?: unknown; requiredPlan?: string | null } | null | undefined) =>
+    widget?.isActive ? widget : defaultWidget;
+  const activeRuleRank = eligibleRuleRankMap(activeRuleOrder, (rule) =>
+    canUseRuleFeatureSet(currentPlan.plan, rule, widgetForRule(rule.widget)),
+  );
 
   return data({
     rules: rules.map(({ widget, ...rule }) => ({
       ...rule,
       widgetName: widget?.name ?? null,
+      storefrontStatus: (() => {
+        if (!rule.isActive) return "Draft";
+        if (rule.marketId && !currentPlan.plan.limits.shopifyMarkets) return "Requires Shopify Markets";
+        const servingWidget = widgetForRule(widget);
+        if (servingWidget && !canEditWidget(currentPlan.plan, servingWidget)) return "Premium design locked";
+        const rank = activeRuleRank.get(rule.id) ?? Number.MAX_SAFE_INTEGER;
+        if (!canServeRule(currentPlan.plan, rule, servingWidget, rank)) return "Over plan limit";
+        return "Served";
+      })(),
+      storefrontTone: (() => {
+        if (!rule.isActive) return "attention";
+        if (rule.marketId && !currentPlan.plan.limits.shopifyMarkets) return "warning";
+        const servingWidget = widgetForRule(widget);
+        if (servingWidget && !canEditWidget(currentPlan.plan, servingWidget)) return "critical";
+        const rank = activeRuleRank.get(rule.id) ?? Number.MAX_SAFE_INTEGER;
+        if (!canServeRule(currentPlan.plan, rule, servingWidget, rank)) return "critical";
+        return "success";
+      })(),
     })),
     ruleSaved: url.searchParams.get("ruleSaved") === "1",
     pagination: {
@@ -210,6 +297,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       from: totalRules === 0 ? 0 : (currentPage - 1) * RULES_PER_PAGE + 1,
       to: Math.min(currentPage * RULES_PER_PAGE, totalRules),
     },
+    currentPlan,
+    activeRuleLimit: currentPlan.plan.limits.activeRules,
+    activeRuleCount,
     filters: {
       query,
       status,
@@ -218,7 +308,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const formData = await request.formData();
   const intent = String(formData.get("intent"));
   const bulkIds = formData.getAll("ids").map(String).filter(Boolean);
@@ -232,6 +323,38 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "toggle") {
     const id = String(formData.get("id"));
     const isActive = formData.get("isActive") === "true";
+
+    if (!isActive) {
+      const [activeRuleCount, targetRule] = await Promise.all([
+        prisma.deliveryRule.count({
+          where: { shop: session.shop, isActive: true },
+        }),
+        prisma.deliveryRule.findFirst({
+          where: { id, shop: session.shop },
+          include: { widget: { select: { customBlocks: true, requiredPlan: true } } },
+        }),
+      ]);
+
+      if (!targetRule) {
+        return data({ error: "Rule was not found." }, { status: 404 });
+      }
+
+      if (targetRule.marketId && !currentPlan.plan.limits.shopifyMarkets) {
+        return data({ error: "This rule uses Shopify Markets and requires the Pro plan or higher." }, { status: 403 });
+      }
+
+      if (!canEditWidget(currentPlan.plan, targetRule.widget)) {
+        const requiredPlan = getRequiredPlanForWidget(targetRule.widget);
+        return data({ error: `This rule design requires the ${requiredPlan.name} plan or higher.` }, { status: 403 });
+      }
+
+      if (limitExceeded(currentPlan.plan.limits.activeRules, activeRuleCount)) {
+        return data({
+          error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.activeRules)} active delivery rule${currentPlan.plan.limits.activeRules === 1 ? "" : "s"}. Upgrade to activate more rules.`,
+        }, { status: 403 });
+      }
+    }
+
     await prisma.deliveryRule.updateMany({
       where: { id, shop: session.shop },
       data: { isActive: !isActive },
@@ -247,6 +370,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const status = String(formData.get("status"));
     if (status !== "active" && status !== "draft") {
       return data({ error: "Invalid bulk status." }, { status: 400 });
+    }
+
+    if (status === "active") {
+      const [activeRuleCount, selectedRules] = await Promise.all([
+        prisma.deliveryRule.count({ where: { shop: session.shop, isActive: true } }),
+        prisma.deliveryRule.findMany({
+          where: { id: { in: bulkIds }, shop: session.shop },
+          include: { widget: { select: { customBlocks: true, requiredPlan: true } } },
+        }),
+      ]);
+      const marketsLockedRule = selectedRules.find((rule) => rule.marketId && !currentPlan.plan.limits.shopifyMarkets);
+      if (marketsLockedRule) {
+        return data({ error: "One or more selected rules use Shopify Markets and require the Pro plan or higher." }, { status: 403 });
+      }
+
+      const premiumRule = selectedRules.find((rule) => !canEditWidget(currentPlan.plan, rule.widget));
+      if (premiumRule) {
+        const requiredPlan = getRequiredPlanForWidget(premiumRule.widget);
+        return data({ error: `One or more selected rule designs require the ${requiredPlan.name} plan or higher.` }, { status: 403 });
+      }
+
+      const rulesToActivate = selectedRules.filter((rule) => !rule.isActive).length;
+
+      if (limitExceeded(currentPlan.plan.limits.activeRules, activeRuleCount, rulesToActivate)) {
+        return data({
+          error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.activeRules)} active delivery rule${currentPlan.plan.limits.activeRules === 1 ? "" : "s"}. Upgrade to activate more rules.`,
+        }, { status: 403 });
+      }
     }
 
     await prisma.deliveryRule.updateMany({
@@ -280,12 +431,25 @@ export default function RulesPage() {
   const actionError = actionData?.error;
   const pagination = loaderData.pagination;
   const filters = loaderData.filters;
+  const activeRuleLimit = loaderData.activeRuleLimit;
+  const activeRuleLimitReached =
+    activeRuleLimit !== null && loaderData.activeRuleCount >= activeRuleLimit;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState(filters.query);
   const [statusFilter, setStatusFilter] = useState(filters.status);
   const [toastMessage, setToastMessage] = useState<string | null>(
     loaderData.ruleSaved ? "Delivery rule saved" : null,
   );
+  const [upgradeModal, setUpgradeModal] = useState<UpgradeModalState>({ open: false });
+
+  const openUpgradeModal = useCallback((
+    featureName: string,
+    requiredPlanName?: string,
+    upgradeUrl = "/app/pricing",
+    message?: string,
+  ) => {
+    setUpgradeModal({ open: true, featureName, requiredPlanName, upgradeUrl, message });
+  }, []);
 
   const ruleIds = useMemo(() => rules.map((rule) => rule.id), [rules]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -330,6 +494,51 @@ export default function RulesPage() {
     const query = params.toString();
     navigate(`${location.pathname}${query ? `?${query}` : ""}`);
   }, [location.pathname, location.search, navigate]);
+
+  const handleAddRule = useCallback(() => {
+    if (activeRuleLimitReached) {
+      openUpgradeModal(
+        "Add more active delivery rules",
+        undefined,
+        "/app/pricing?upgrade=rules",
+        `Your ${loaderData.currentPlan.plan.name} plan includes ${limitLabel(activeRuleLimit)} active delivery rule${activeRuleLimit === 1 ? "" : "s"}. Upgrade to add more active storefront rules.`,
+      );
+      return;
+    }
+
+    navigate("/app/rules/new");
+  }, [activeRuleLimit, activeRuleLimitReached, loaderData.currentPlan.plan.name, navigate, openUpgradeModal]);
+
+  const handleStorefrontStatusClick = useCallback((rule: RuleRow) => {
+    if (rule.storefrontStatus === "Premium design locked") {
+      openUpgradeModal(
+        rule.widgetName || "Premium design",
+        undefined,
+        "/app/pricing?upgrade=design",
+        "This rule uses a design with premium components that are not included in the current plan. Upgrade or choose a basic design to serve it.",
+      );
+      return;
+    }
+
+    if (rule.storefrontStatus === "Over plan limit") {
+      openUpgradeModal(
+        "More active delivery rules",
+        undefined,
+        "/app/pricing?upgrade=rules",
+        `This active rule is over the ${loaderData.currentPlan.plan.name} plan limit and is not served on the storefront. Upgrade to serve more active rules.`,
+      );
+      return;
+    }
+
+    if (rule.storefrontStatus === "Requires Shopify Markets") {
+      openUpgradeModal(
+        "Shopify Markets targeting",
+        "Pro",
+        "/app/pricing?upgrade=markets",
+        "This rule uses Shopify Markets targeting, which requires the Pro plan or higher.",
+      );
+    }
+  }, [loaderData.currentPlan.plan.name, openUpgradeModal]);
 
   const handleDelete = useCallback((id: string) => {
     if (!confirm("Delete this delivery rule?")) return;
@@ -410,6 +619,15 @@ export default function RulesPage() {
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
+      <UpgradePlanModal
+        open={upgradeModal.open}
+        onClose={() => setUpgradeModal({ open: false })}
+        featureName={upgradeModal.featureName}
+        requiredPlanName={upgradeModal.requiredPlanName}
+        currentPlanName={loaderData.currentPlan.plan.name}
+        message={upgradeModal.message}
+        upgradeUrl={upgradeModal.upgradeUrl}
+      />
       {toastMessage && (
         <div className="fixed right-5 top-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-green-200 bg-white shadow-xl">
           <div className="flex items-start gap-3 p-4">
@@ -443,16 +661,31 @@ export default function RulesPage() {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/app/rules/new")}
+            onClick={handleAddRule}
             className={`${BUTTON_PRIMARY} whitespace-nowrap`}
           >
-            Add rule
+            {activeRuleLimitReached ? (
+              <>
+                <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                Upgrade to add rule
+              </>
+            ) : (
+              "Add rule"
+            )}
           </button>
         </div>
 
         {actionError && (
           <Banner title="Rule action failed" tone="critical">
             <p>{actionError}</p>
+          </Banner>
+        )}
+
+        {activeRuleLimitReached && (
+          <Banner title={`${loaderData.currentPlan.plan.name} plan rule limit reached`} tone="warning">
+            <p>
+              You have {loaderData.activeRuleCount} active delivery rules. Upgrade to add more active storefront rules.
+            </p>
           </Banner>
         )}
 
@@ -547,10 +780,17 @@ export default function RulesPage() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => navigate("/app/rules/new")}
+                  onClick={handleAddRule}
                   className={`${BUTTON_PRIMARY} mt-5`}
                 >
-                  Add first rule
+                  {activeRuleLimitReached ? (
+                    <>
+                      <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                      Upgrade to add rule
+                    </>
+                  ) : (
+                    "Add first rule"
+                  )}
                 </button>
               )}
             </div>
@@ -630,6 +870,10 @@ export default function RulesPage() {
                   {rules.map((rule) => {
                     const targeting = ruleTargetingSummary(rule);
                     const country = ruleCountrySummary(rule);
+                    const storefrontLocked =
+                      rule.storefrontStatus === "Premium design locked" ||
+                      rule.storefrontStatus === "Over plan limit" ||
+                      rule.storefrontStatus === "Requires Shopify Markets";
 
                     return (
                         <tr
@@ -687,9 +931,27 @@ export default function RulesPage() {
                             </p>
                           </td>
                           <td className="px-5 py-4 align-middle">
-                            <Badge tone={rule.isActive ? "success" : "critical"}>
-                              {rule.isActive ? "Active" : "Draft"}
-                            </Badge>
+                            <div className="space-y-1">
+                              <Badge tone={rule.isActive ? "success" : "attention"}>
+                                {rule.isActive ? "Active" : "Draft"}
+                              </Badge>
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (storefrontLocked) handleStorefrontStatusClick(rule);
+                                  }}
+                                  className={`inline-flex ${storefrontLocked ? "cursor-pointer" : "cursor-help"}`}
+                                  title={storefrontStatusTooltip(rule.storefrontStatus)}
+                                  aria-label={storefrontStatusTooltip(rule.storefrontStatus)}
+                                >
+                                  {storefrontLocked && <LockGlyph className="mr-1 h-3.5 w-3.5 text-gray-500" />}
+                                  <Badge tone={rule.storefrontTone}>
+                                    {storefrontStatusLabel(rule.storefrontStatus)}
+                                  </Badge>
+                                </button>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-5 py-4 align-middle">
                             <div className="flex justify-end gap-2">

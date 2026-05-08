@@ -19,6 +19,7 @@ import { ChatIcon, CheckCircleIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { useState } from "react";
+import { syncCurrentPlanForShop } from "../lib/pricing.server";
 
 type AdminGraphqlClient = {
   graphql: (
@@ -49,7 +50,7 @@ type OrderRevenueSummary = {
   amountCents: number;
   currencyCode: string;
   orderCount: number;
-  unavailableReason?: "order_access_denied" | "api_error";
+  unavailableReason?: "order_access_denied" | "api_error" | "plan_locked";
 };
 
 type AnalyticsEventSummary = {
@@ -245,9 +246,12 @@ const fetchOrderRevenue = async (
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session, admin, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const shop = session.shop;
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const analyticsDays = currentPlan.plan.limits.analyticsDays;
+  const hasAdvancedAnalytics = currentPlan.plan.limits.advancedAnalytics;
+  const since = new Date(Date.now() - analyticsDays * 24 * 60 * 60 * 1000);
   const analyticsDelegate = prisma.analyticsEvent;
 
   const eventsPromise: Promise<AnalyticsEventSummary[]> = analyticsDelegate
@@ -331,8 +335,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     new Set(topProducts.map((product) => product.productId)),
   );
   const [shopifyProductMetadata, orderRevenue] = await Promise.all([
-    fetchProductMetadata(admin as AdminGraphqlClient, productIdsForMetadata),
-    fetchOrderRevenue(admin as AdminGraphqlClient, since),
+    hasAdvancedAnalytics
+      ? fetchProductMetadata(admin as AdminGraphqlClient, productIdsForMetadata)
+      : Promise.resolve(new Map<string, ProductMetadata>()),
+    hasAdvancedAnalytics
+      ? fetchOrderRevenue(admin as AdminGraphqlClient, since)
+      : Promise.resolve({
+          amountCents: 0,
+          currencyCode: "USD",
+          orderCount: 0,
+          unavailableReason: "plan_locked" as const,
+        }),
   ]);
   const metadataForProduct = (productId: string) => {
     const stored = eventProductMetadata.get(productId) || {};
@@ -356,6 +369,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     activeRules,
     isEnabled: settings?.isEnabled ?? false,
     widgetStyle: settings?.widgetStyle ?? "modern",
+    currentPlan,
+    analyticsDays,
+    hasAdvancedAnalytics,
     analytics: {
       views,
       hovers,
@@ -370,15 +386,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       orderCount: orderRevenue.orderCount,
       revenueUnavailableReason: orderRevenue.unavailableReason,
       estimatedSavedMinutes,
-      topProducts: topProducts.map((product) => ({
-        ...product,
-        title: metadataForProduct(product.productId).title ||
-          `Product ${shortProductId(product.productId)}`,
-      })),
-      customersByCountry: Array.from(countryCounts.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([countryCode, count]) => ({ countryCode, count })),
+      topProducts: hasAdvancedAnalytics
+        ? topProducts.map((product) => ({
+            ...product,
+            title: metadataForProduct(product.productId).title ||
+              `Product ${shortProductId(product.productId)}`,
+          }))
+        : [],
+      customersByCountry: hasAdvancedAnalytics
+        ? Array.from(countryCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([countryCode, count]) => ({ countryCode, count }))
+        : [],
     },
   });
 };
@@ -416,10 +436,10 @@ function StatCard({
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { totalRules, activeRules, isEnabled, widgetStyle, analytics } =
+  const { totalRules, activeRules, isEnabled, widgetStyle, analytics, currentPlan, analyticsDays, hasAdvancedAnalytics } =
     useLoaderData<typeof loader>();
 
-  const [dateRange] = useState("Last 7 days");
+  const [dateRange] = useState(`Last ${analyticsDays} days`);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const countStats = [
@@ -450,7 +470,7 @@ export default function Dashboard() {
       </div>
 
       {/* ─── Upgrade Banner ─────────────────────────────────────────────────── */}
-      {!bannerDismissed && (
+      {!hasAdvancedAnalytics && !bannerDismissed && (
         <div className="flex items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <div className="flex items-start gap-2">
             <span className="text-amber-500 text-base">⚠️</span>
@@ -459,11 +479,11 @@ export default function Dashboard() {
                 Unlock analytic dashboard
               </p>
               <p className="text-xs text-amber-700 mt-0.5">
-                Get advanced ETA insights and detailed reports by upgrading your plan
+                Your {currentPlan.plan.name} plan includes basic analytics. Upgrade to Pro for product, country, and revenue insights.
               </p>
-              <button className="mt-2 inline-flex h-9 items-center justify-center rounded-xl bg-amber-500 px-3 text-xs font-bold text-white transition-colors hover:bg-amber-600">
+              <a href="/app/pricing" className="mt-2 inline-flex h-9 items-center justify-center rounded-xl bg-amber-500 px-3 text-xs font-bold text-white transition-colors hover:bg-amber-600">
                 Upgrade now
-              </button>
+              </a>
             </div>
           </div>
           <button
@@ -482,7 +502,7 @@ export default function Dashboard() {
           <span>{dateRange}</span>
           <span className="text-gray-400 text-xs">▾</span>
         </button>
-        <span className="text-xs text-gray-400">Analytics are based on storefront events from the last 7 days</span>
+        <span className="text-xs text-gray-400">Analytics are based on storefront events from the last {analyticsDays} days</span>
       </div>
 
       {/* ─── Revenue & Time Saved ─────────────────────────────────────────────── */}
@@ -493,9 +513,11 @@ export default function Dashboard() {
             <>
               <p className="text-2xl font-bold text-amber-700">Unavailable</p>
               <p className="text-xs text-amber-700 mt-1">
-                {analytics.revenueUnavailableReason === "order_access_denied"
-                  ? "Order API access is blocked by Shopify protected customer data settings."
-                  : "Shopify Orders API could not be loaded."}
+                {analytics.revenueUnavailableReason === "plan_locked"
+                  ? "Revenue analytics are available on Pro and Scale plans."
+                  : analytics.revenueUnavailableReason === "order_access_denied"
+                    ? "Order API access is blocked by Shopify protected customer data settings."
+                    : "Shopify Orders API could not be loaded."}
               </p>
             </>
           ) : (
@@ -577,7 +599,7 @@ export default function Dashboard() {
           <p className="text-sm font-semibold text-gray-700 mb-3">Top selling ETA products</p>
           {analytics.topProducts.length === 0 ? (
             <div className="flex items-center justify-center h-28 text-xs text-gray-400">
-              There was no data found for this date range
+              {hasAdvancedAnalytics ? "There was no data found for this date range" : "Upgrade to Pro to unlock product analytics"}
             </div>
           ) : (
             <div className="space-y-2">
@@ -596,7 +618,7 @@ export default function Dashboard() {
           <p className="text-sm font-semibold text-gray-700 mb-3">Customers by country</p>
           {analytics.customersByCountry.length === 0 ? (
             <div className="flex items-center justify-center h-28 text-xs text-gray-400">
-              There was no data found for this date range
+              {hasAdvancedAnalytics ? "There was no data found for this date range" : "Upgrade to Pro to unlock country analytics"}
             </div>
           ) : (
             <div className="space-y-2">

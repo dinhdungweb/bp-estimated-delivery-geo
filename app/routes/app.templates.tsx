@@ -16,6 +16,7 @@ import {
 } from "react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
+import { LockGlyph, UpgradePlanModal } from "../components/UpgradePlanModal";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -30,6 +31,15 @@ import {
   type BlockConfig,
   type WidgetSettingsProps,
 } from "../lib/delivery";
+import {
+  canEditWidget,
+  canUseTemplate,
+  getRequiredPlanForWidget,
+  limitExceeded,
+  limitLabel,
+  requiredPlanForTemplate,
+} from "../lib/pricing";
+import { syncCurrentPlanForShop } from "../lib/pricing.server";
 import type {
   SavedWidget,
   TemplateCategory,
@@ -44,15 +54,30 @@ type ActionResult = {
   deletedDesignName?: string;
 };
 
-function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templateName: string) {
+type UpgradeModalState = {
+  open: boolean;
+  featureName?: string;
+  requiredPlanName?: string;
+  message?: string;
+  upgradeUrl?: string;
+};
+
+function templateWidgetData(
+  template: (typeof TEMPLATE_DEFAULTS)[string],
+  templateName: string,
+  templateId: string,
+) {
+  const customBlocks = hydrateBlocksForTemplate(template.customBlocks, template);
   return {
     name: templateName || "Template Design",
     isDefault: false,
     isActive: true,
     isReusable: false,
     sourceWidgetId: null,
+    sourceTemplateId: templateId,
+    requiredPlan: getRequiredPlanForWidget({ customBlocks }).handle,
     widgetStyle: "custom",
-    customBlocks: hydrateBlocksForTemplate(template.customBlocks, template) as unknown as Prisma.InputJsonValue,
+    customBlocks: customBlocks as unknown as Prisma.InputJsonValue,
     textColor: template.textColor || "#000000",
     iconColor: template.iconColor || "#0033cc",
     bgColor: template.bgColor || "#ffffff",
@@ -79,43 +104,49 @@ function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templa
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const appSetting = await prisma.appSetting.findUnique({ where: { shop: session.shop } });
-  const widgets = await prisma.widget.findMany({
-    where: { shop: session.shop, isDefault: false, isReusable: true },
-    orderBy: [{ updatedAt: "desc" }],
-    select: {
-      id: true,
-      name: true,
-      isDefault: true,
-      isActive: true,
-      widgetStyle: true,
-      customBlocks: true,
-      textColor: true,
-      iconColor: true,
-      bgColor: true,
-      borderColor: true,
-      borderRadius: true,
-      shadow: true,
-      glassmorphism: true,
-      padding: true,
-      bgGradient: true,
-      showTimeline: true,
-      policyText: true,
-      headerText: true,
-      subHeaderText: true,
-      step1Label: true,
-      step1SubText: true,
-      step1Icon: true,
-      step2Label: true,
-      step2SubText: true,
-      step2Icon: true,
-      step3Label: true,
-      step3SubText: true,
-      step3Icon: true,
-      updatedAt: true,
-    },
-  });
+  const { session, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
+  const [appSetting, activeRuleCount, widgets] = await Promise.all([
+    prisma.appSetting.findUnique({ where: { shop: session.shop } }),
+    prisma.deliveryRule.count({ where: { shop: session.shop, isActive: true } }),
+    prisma.widget.findMany({
+      where: { shop: session.shop, isDefault: false, isReusable: true },
+      orderBy: [{ updatedAt: "desc" }],
+      select: {
+        id: true,
+        name: true,
+        isDefault: true,
+        isActive: true,
+        widgetStyle: true,
+        sourceTemplateId: true,
+        requiredPlan: true,
+        customBlocks: true,
+        textColor: true,
+        iconColor: true,
+        bgColor: true,
+        borderColor: true,
+        borderRadius: true,
+        shadow: true,
+        glassmorphism: true,
+        padding: true,
+        bgGradient: true,
+        showTimeline: true,
+        policyText: true,
+        headerText: true,
+        subHeaderText: true,
+        step1Label: true,
+        step1SubText: true,
+        step1Icon: true,
+        step2Label: true,
+        step2SubText: true,
+        step2Icon: true,
+        step3Label: true,
+        step3SubText: true,
+        step3Icon: true,
+        updatedAt: true,
+      },
+    }),
+  ]);
   const widgetIds = widgets.map((widget) => widget.id);
   const usageCounts = new Map<string, number>();
 
@@ -160,6 +191,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     locationPrefixText: normalizeLocationPrefixText(appSetting?.locationPrefixText),
     showLocationFlag: appSetting?.showLocationFlag ?? true,
     locationRowAlignment: normalizeLocationRowAlignment(appSetting?.locationRowAlignment),
+    currentPlan,
+    activeRuleCount,
+    activeRuleLimit: currentPlan.plan.limits.activeRules,
     widgets: widgets.map((widget) => ({
       ...widget,
       updatedAt: widget.updatedAt.toISOString(),
@@ -169,7 +203,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "template");
   const templateId = String(formData.get("templateId") || "");
@@ -177,6 +212,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const widgetId = String(formData.get("widgetId") || "");
 
   if (intent === "create-design") {
+    const savedDesignCount = await prisma.widget.count({
+      where: { shop: session.shop, isDefault: false, isReusable: true },
+    });
+
+    if (limitExceeded(currentPlan.plan.limits.savedDesigns, savedDesignCount)) {
+      return routerData({
+        error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.savedDesigns)} saved My Design${currentPlan.plan.limits.savedDesigns === 1 ? "" : "s"}. Upgrade to save more designs.`,
+      }, { status: 403 });
+    }
+
     const widget = await prisma.widget.create({
       data: {
         shop: session.shop,
@@ -185,6 +230,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         isActive: true,
         isReusable: true,
         sourceWidgetId: null,
+        requiredPlan: "free",
         padding: 16,
         customBlocks: buildFallbackBlocks(
           {},
@@ -240,6 +286,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "saved-design") {
+    const activeRuleCount = await prisma.deliveryRule.count({
+      where: { shop: session.shop, isActive: true },
+    });
+    if (limitExceeded(currentPlan.plan.limits.activeRules, activeRuleCount)) {
+      return routerData({
+        error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.activeRules)} active delivery rule${currentPlan.plan.limits.activeRules === 1 ? "" : "s"}. Upgrade to create another rule from this design.`,
+      }, { status: 403 });
+    }
+
     if (!widgetId) {
       return routerData({ error: "Invalid design" }, { status: 400 });
     }
@@ -250,6 +305,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!sourceWidget) {
       return routerData({ error: "Design not found" }, { status: 404 });
+    }
+
+    if (!canEditWidget(currentPlan.plan, sourceWidget)) {
+      const requiredPlan = getRequiredPlanForWidget(sourceWidget);
+      return routerData({
+        error: `${sourceWidget.name || "This design"} requires the ${requiredPlan.name} plan or higher.`,
+      }, { status: 403 });
     }
 
     const ruleWidget = await prisma.widget.create({
@@ -274,13 +336,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return routerData({ error: "Invalid template" }, { status: 400 });
   }
 
+  const activeRuleCount = await prisma.deliveryRule.count({
+    where: { shop: session.shop, isActive: true },
+  });
+  if (limitExceeded(currentPlan.plan.limits.activeRules, activeRuleCount)) {
+    return routerData({
+      error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.activeRules)} active delivery rule${currentPlan.plan.limits.activeRules === 1 ? "" : "s"}. Upgrade to create another rule from this template.`,
+    }, { status: 403 });
+  }
+
+  if (!canUseTemplate(currentPlan.plan, templateId)) {
+    const requiredPlan = requiredPlanForTemplate(templateId);
+    return routerData({
+      error: `${templateName || "This template"} requires the ${requiredPlan.name} plan or higher.`,
+    }, { status: 403 });
+  }
+
   const def = TEMPLATE_DEFAULTS[templateId];
   const widget = await prisma.widget.create({
-    data: {
-      shop: session.shop,
-      ...templateWidgetData(def, templateName),
-    },
-  });
+      data: {
+        shop: session.shop,
+        ...templateWidgetData(def, templateName, templateId),
+      },
+    });
 
   const params = new URLSearchParams({
     selectedWidgetId: widget.id,
@@ -619,6 +697,7 @@ function TemplateCard({
   showLocationFlag,
   locationRowAlignment,
   isSubmitting,
+  isLocked,
   onUseTemplate,
 }: {
   template: TemplateMeta;
@@ -627,6 +706,7 @@ function TemplateCard({
   showLocationFlag: boolean;
   locationRowAlignment: string;
   isSubmitting: boolean;
+  isLocked: boolean;
   onUseTemplate: (template: TemplateMeta) => void;
 }) {
   const settings = TEMPLATE_DEFAULTS[template.style];
@@ -661,9 +741,22 @@ function TemplateCard({
           type="button"
           onClick={() => onUseTemplate(template)}
           disabled={isSubmitting}
-          className="flex h-9 w-full items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+          className={`flex h-9 w-full items-center justify-center rounded-xl px-3 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+            isLocked
+              ? "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              : "bg-gray-900 text-white hover:bg-black"
+          }`}
         >
-          {isSubmitting ? "Applying..." : "Use template"}
+          {isSubmitting ? (
+            "Applying..."
+          ) : isLocked ? (
+            <>
+              <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+              Upgrade to use
+            </>
+          ) : (
+            "Use template"
+          )}
         </button>
       </div>
     </article>
@@ -710,8 +803,12 @@ function MyDesignCard({
   locationRowAlignment,
   isSubmitting,
   isDeleting,
+  isLocked,
+  useLocked,
+  requiredPlanName,
   onCustomize,
   onDelete,
+  onLockedFeature,
   onUseDesign,
 }: {
   widget: SavedWidget;
@@ -721,8 +818,12 @@ function MyDesignCard({
   locationRowAlignment: string;
   isSubmitting: boolean;
   isDeleting: boolean;
+  isLocked: boolean;
+  useLocked: boolean;
+  requiredPlanName: string;
   onCustomize: (widgetId: string) => void;
   onDelete: (widget: SavedWidget) => void;
+  onLockedFeature: (featureName: string, requiredPlanName?: string, upgradeUrl?: string) => void;
   onUseDesign: (widget: SavedWidget) => void;
 }) {
   const settings = widgetPreviewSettings(widget);
@@ -756,10 +857,19 @@ function MyDesignCard({
             <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-gray-950">{widget.name}</h3>
             <span
               className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                usedByRuleCount > 0 ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"
+                isLocked
+                  ? "bg-amber-100 text-amber-800"
+                  : usedByRuleCount > 0
+                    ? "bg-blue-50 text-blue-700"
+                    : "bg-gray-100 text-gray-600"
               }`}
             >
-              {usedByRuleCount > 0 ? usageLabel : "Unused"}
+              {isLocked ? (
+                <span className="inline-flex items-center gap-1">
+                  <LockGlyph className="h-3 w-3" />
+                  {requiredPlanName} required
+                </span>
+              ) : usedByRuleCount > 0 ? usageLabel : "Unused"}
             </span>
           </div>
           <p className="mt-1 text-xs leading-4 text-gray-500">Updated {updatedAt}</p>
@@ -769,27 +879,50 @@ function MyDesignCard({
             type="button"
             onClick={() => onUseDesign(widget)}
             disabled={isSubmitting}
-            className="flex h-9 w-full items-center justify-center rounded-xl bg-gray-900 px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+            className={`flex h-9 w-full items-center justify-center rounded-xl px-3 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              useLocked
+                ? "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                : "bg-gray-900 text-white hover:bg-black"
+            }`}
           >
-            {isSubmitting ? "Applying..." : "Use design"}
+            {isSubmitting ? (
+              "Applying..."
+            ) : useLocked ? (
+              <>
+                <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                Upgrade to use
+              </>
+            ) : (
+              "Use design"
+            )}
           </button>
           <button
             type="button"
-            onClick={() => onCustomize(widget.id)}
+            onClick={() => {
+              if (isLocked) {
+                onLockedFeature(`Customize ${widget.name}`, requiredPlanName, "/app/pricing?upgrade=studio");
+                return;
+              }
+              onCustomize(widget.id);
+            }}
             disabled={isSubmitting || isDeleting}
             aria-label={`Customize ${widget.name}`}
-            title="Customize"
+            title={isLocked ? `${widget.name} requires the ${requiredPlanName} plan` : "Customize"}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M9.7 3.05 12.95 6.3M2.67 13.33l3.02-.67 7.96-7.96a1.53 1.53 0 0 0-2.17-2.17L3.52 10.5l-.85 2.83Z"
-                stroke="currentColor"
-                strokeWidth="1.45"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            {isLocked ? (
+              <LockGlyph />
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M9.7 3.05 12.95 6.3M2.67 13.33l3.02-.67 7.96-7.96a1.53 1.53 0 0 0-2.17-2.17L3.52 10.5l-.85 2.83Z"
+                  stroke="currentColor"
+                  strokeWidth="1.45"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </button>
           <button
             type="button"
@@ -828,9 +961,11 @@ function MyDesignCard({
 
 function NewDesignCard({
   isSubmitting,
+  isLocked,
   onCreate,
 }: {
   isSubmitting: boolean;
+  isLocked: boolean;
   onCreate: () => void;
 }) {
   return (
@@ -844,10 +979,21 @@ function NewDesignCard({
         +
       </span>
       <span className="mt-4 text-sm font-bold text-gray-950">
-        {isSubmitting ? "Creating..." : "Create new design"}
+        {isSubmitting ? (
+          "Creating..."
+        ) : isLocked ? (
+          <span className="inline-flex items-center gap-1.5">
+            <LockGlyph className="h-4 w-4" />
+            Upgrade for more designs
+          </span>
+        ) : (
+          "Create new design"
+        )}
       </span>
       <span className="mt-2 max-w-[220px] text-xs leading-5 text-gray-500">
-        Start from a blank delivery widget and customize it in the editor.
+        {isLocked
+          ? "Your current plan has reached its My Design limit."
+          : "Start from a blank delivery widget and customize it in the editor."}
       </span>
     </button>
   );
@@ -860,6 +1006,9 @@ export default function TemplateBuilder() {
     locationPrefixText = DEFAULT_LOCATION_PREFIX_TEXT,
     showLocationFlag = true,
     locationRowAlignment = "right",
+    currentPlan,
+    activeRuleCount,
+    activeRuleLimit,
   } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
@@ -873,6 +1022,17 @@ export default function TemplateBuilder() {
   const [pendingStyle, setPendingStyle] = useState<TemplateId | null>(null);
   const designSaved = searchParams.get("designSaved") === "1";
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
+  const [upgradeModal, setUpgradeModal] = useState<UpgradeModalState>({ open: false });
+  const activeRuleLimitReached = activeRuleLimit !== null && activeRuleCount >= activeRuleLimit;
+
+  const openUpgradeModal = useCallback((
+    featureName: string,
+    requiredPlanName?: string,
+    upgradeUrl = "/app/pricing",
+    message?: string,
+  ) => {
+    setUpgradeModal({ open: true, featureName, requiredPlanName, upgradeUrl, message });
+  }, []);
 
   const showToast = useCallback((message: string, isError = false) => {
     const shopify = (globalThis as unknown as {
@@ -893,6 +1053,27 @@ export default function TemplateBuilder() {
   );
 
   const handleUseTemplate = (template: TemplateMeta) => {
+    if (activeRuleLimitReached) {
+      openUpgradeModal(
+        "Create another delivery rule",
+        undefined,
+        "/app/pricing?upgrade=rules",
+        `Your ${currentPlan.plan.name} plan includes ${limitLabel(activeRuleLimit)} active delivery rule${activeRuleLimit === 1 ? "" : "s"}. Upgrade to create another rule from this template.`,
+      );
+      return;
+    }
+
+    if (!canUseTemplate(currentPlan.plan, template.style)) {
+      const requiredPlan = requiredPlanForTemplate(template.style);
+      openUpgradeModal(
+        template.name,
+        requiredPlan.name,
+        "/app/pricing?upgrade=templates",
+        `${template.name} uses components that are available on the ${requiredPlan.name} plan or higher.`,
+      );
+      return;
+    }
+
     setPendingStyle(template.style);
     submit(
       { templateId: template.style, templateName: template.name },
@@ -901,6 +1082,27 @@ export default function TemplateBuilder() {
   };
 
   const handleUseSavedDesign = (widget: SavedWidget) => {
+    if (activeRuleLimitReached) {
+      openUpgradeModal(
+        "Create another delivery rule",
+        undefined,
+        "/app/pricing?upgrade=rules",
+        `Your ${currentPlan.plan.name} plan includes ${limitLabel(activeRuleLimit)} active delivery rule${activeRuleLimit === 1 ? "" : "s"}. Upgrade to create another rule from this design.`,
+      );
+      return;
+    }
+
+    if (!canEditWidget(currentPlan.plan, widget)) {
+      const requiredPlan = getRequiredPlanForWidget(widget);
+      openUpgradeModal(
+        widget.name,
+        requiredPlan.name,
+        "/app/pricing?upgrade=designs",
+        `${widget.name} includes premium components that require the ${requiredPlan.name} plan or higher.`,
+      );
+      return;
+    }
+
     setPendingStyle(null);
     submit(
       { intent: "saved-design", widgetId: widget.id, widgetName: widget.name },
@@ -909,6 +1111,16 @@ export default function TemplateBuilder() {
   };
 
   const handleCreateDesign = () => {
+    if (savedDesignLimitReached) {
+      openUpgradeModal(
+        "Create more My Designs",
+        undefined,
+        "/app/pricing?upgrade=designs",
+        `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.savedDesigns)} saved My Design${currentPlan.plan.limits.savedDesigns === 1 ? "" : "s"}. Upgrade to save more designs.`,
+      );
+      return;
+    }
+
     setPendingStyle(null);
     submit({ intent: "create-design" }, { method: "post" });
   };
@@ -927,6 +1139,8 @@ export default function TemplateBuilder() {
   const isSubmitting = navigation.state === "submitting";
   const isCreatingDesign = isSubmitting && navigation.formData?.get("intent") === "create-design";
   const isDeletingDesign = isSubmitting && navigation.formData?.get("intent") === "delete-design";
+  const savedDesignLimit = currentPlan.plan.limits.savedDesigns;
+  const savedDesignLimitReached = savedDesignLimit !== null && widgets.length >= savedDesignLimit;
 
   useEffect(() => {
     if (!designSaved) return;
@@ -955,6 +1169,15 @@ export default function TemplateBuilder() {
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
+      <UpgradePlanModal
+        open={upgradeModal.open}
+        onClose={() => setUpgradeModal({ open: false })}
+        featureName={upgradeModal.featureName}
+        requiredPlanName={upgradeModal.requiredPlanName}
+        currentPlanName={currentPlan.plan.name}
+        message={upgradeModal.message}
+        upgradeUrl={upgradeModal.upgradeUrl}
+      />
       {toast && (
         <div
           className={`fixed right-5 top-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border bg-white shadow-xl ${
@@ -1056,13 +1279,18 @@ export default function TemplateBuilder() {
                 showLocationFlag={showLocationFlag}
                 locationRowAlignment={locationRowAlignment}
                 isSubmitting={isSubmitting && pendingStyle === template.style}
+                isLocked={activeRuleLimitReached || !canUseTemplate(currentPlan.plan, template.style)}
                 onUseTemplate={handleUseTemplate}
               />
             ))}
           </div>
         ) : widgets.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <NewDesignCard isSubmitting={isCreatingDesign} onCreate={handleCreateDesign} />
+            <NewDesignCard
+              isSubmitting={isCreatingDesign}
+              isLocked={savedDesignLimitReached}
+              onCreate={handleCreateDesign}
+            />
             {widgets.map((widget) => (
               <MyDesignCard
                 key={widget.id}
@@ -1073,15 +1301,36 @@ export default function TemplateBuilder() {
                 locationRowAlignment={locationRowAlignment}
                 isSubmitting={isSubmitting && navigation.formData?.get("widgetId") === widget.id}
                 isDeleting={isDeletingDesign && navigation.formData?.get("widgetId") === widget.id}
-                onCustomize={(widgetId) => navigate(`/app/widgets/${widgetId}`)}
+                isLocked={!canEditWidget(currentPlan.plan, widget)}
+                useLocked={activeRuleLimitReached || !canEditWidget(currentPlan.plan, widget)}
+                requiredPlanName={getRequiredPlanForWidget(widget).name}
+                onCustomize={(widgetId) => {
+                  const targetWidget = widgets.find((item) => item.id === widgetId);
+                  if (targetWidget && !canEditWidget(currentPlan.plan, targetWidget)) {
+                    const requiredPlan = getRequiredPlanForWidget(targetWidget);
+                    openUpgradeModal(
+                      `Customize ${targetWidget.name}`,
+                      requiredPlan.name,
+                      "/app/pricing?upgrade=studio",
+                      `${targetWidget.name} includes premium components that require the ${requiredPlan.name} plan or higher.`,
+                    );
+                    return;
+                  }
+                  navigate(`/app/widgets/${widgetId}`);
+                }}
                 onDelete={handleDeleteDesign}
+                onLockedFeature={openUpgradeModal}
                 onUseDesign={handleUseSavedDesign}
               />
             ))}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <NewDesignCard isSubmitting={isCreatingDesign} onCreate={handleCreateDesign} />
+            <NewDesignCard
+              isSubmitting={isCreatingDesign}
+              isLocked={savedDesignLimitReached}
+              onCreate={handleCreateDesign}
+            />
           </div>
         )}
       </div>

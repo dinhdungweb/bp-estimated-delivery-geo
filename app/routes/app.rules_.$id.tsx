@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
+import { LockGlyph, UpgradePlanModal } from "../components/UpgradePlanModal";
 import {
   ALL_COUNTRIES_CODE,
   buildFallbackBlocks,
@@ -81,6 +82,15 @@ import {
   type TemplateMeta,
 } from "../lib/widgetTemplates";
 import { hydrateBlocksForTemplate } from "../lib/widgetStyleSamples";
+import {
+  canEditWidget,
+  canUseTemplate,
+  getRequiredPlanForWidget,
+  limitExceeded,
+  limitLabel,
+  requiredPlanForTemplate,
+} from "../lib/pricing";
+import { syncCurrentPlanForShop } from "../lib/pricing.server";
 
 type RuleEditorRule = {
   id: string;
@@ -116,6 +126,14 @@ type ActionResult = {
   sourceDesignId?: string;
   designName?: string;
   templateApplied?: boolean;
+};
+
+type UpgradeModalState = {
+  open: boolean;
+  featureName?: string;
+  requiredPlanName?: string;
+  message?: string;
+  upgradeUrl?: string;
 };
 
 type AdminGraphqlClient = {
@@ -860,15 +878,22 @@ function ShopifyMarketPicker({
   );
 }
 
-function templateWidgetData(template: (typeof TEMPLATE_DEFAULTS)[string], templateName: string) {
+function templateWidgetData(
+  template: (typeof TEMPLATE_DEFAULTS)[string],
+  templateName: string,
+  templateId: string,
+) {
+  const customBlocks = hydrateBlocksForTemplate(template.customBlocks, template);
   return {
     name: templateName || "Template Design",
     isDefault: false,
     isActive: true,
     isReusable: false,
     sourceWidgetId: null,
+    sourceTemplateId: templateId,
+    requiredPlan: getRequiredPlanForWidget({ customBlocks }).handle,
     widgetStyle: "custom",
-    customBlocks: hydrateBlocksForTemplate(template.customBlocks, template) as unknown as Prisma.InputJsonValue,
+    customBlocks: customBlocks as unknown as Prisma.InputJsonValue,
     textColor: template.textColor || "#000000",
     iconColor: template.iconColor || "#0033cc",
     bgColor: template.bgColor || "#ffffff",
@@ -903,11 +928,12 @@ function serializeWidget(widget: Widget): RuleEditorWidget {
 }
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session, admin, billing } = await authenticate.admin(request);
   const url = new URL(request.url);
   const routeId = params.id;
   const isNew = isNewRuleId(routeId);
   const requestedWidgetId = url.searchParams.get("selectedWidgetId") || "";
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const [defaultWidget, appSetting] = await Promise.all([
     ensureDefaultWidget(session.shop),
     ensureAppSetting(session.shop),
@@ -965,7 +991,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       targetProductIds.slice(0, TARGET_LIST_PAGE_SIZE),
       targetCollectionIds.slice(0, TARGET_LIST_PAGE_SIZE),
     ),
-    fetchShopifyMarkets(admin as AdminGraphqlClient),
+    currentPlan.plan.limits.shopifyMarkets
+      ? fetchShopifyMarkets(admin as AdminGraphqlClient)
+      : Promise.resolve({
+          markets: [] as ShopifyMarketOption[],
+          error: "Upgrade to Pro to use Shopify Markets targeting.",
+        }),
   ]);
 
   return data({
@@ -979,6 +1010,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         updatedAt: widget.updatedAt.toISOString(),
     })),
     shop: session.shop,
+    currentPlan,
     showLocationSelector: appSetting.showLocationSelector,
     locationPrefixText: normalizeLocationPrefixText(appSetting.locationPrefixText),
     showLocationFlag: appSetting.showLocationFlag,
@@ -995,7 +1027,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const { session, admin } = await authenticate.admin(request);
+  const { session, admin, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const routeId = params.id;
   const isNew = isNewRuleId(routeId);
   const formData = await request.formData();
@@ -1048,6 +1081,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         isActive: true,
         isReusable: false,
         sourceWidgetId: null,
+        requiredPlan: "free",
         padding: 16,
         customBlocks: buildFallbackBlocks(
           {},
@@ -1069,10 +1103,17 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return data({ error: "Invalid template" }, { status: 400 });
     }
 
+    if (!canUseTemplate(currentPlan.plan, templateId)) {
+      const requiredPlan = requiredPlanForTemplate(templateId);
+      return data({
+        error: `${templateName || "This template"} requires the ${requiredPlan.name} plan or higher.`,
+      }, { status: 403 });
+    }
+
     const ruleWidget = await prisma.widget.create({
       data: {
         shop: session.shop,
-        ...templateWidgetData(template, templateName),
+        ...templateWidgetData(template, templateName, templateId),
       },
     });
 
@@ -1098,6 +1139,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
     if (!sourceWidget) {
       return data({ error: "Design not found" }, { status: 404 });
+    }
+
+    if (!canEditWidget(currentPlan.plan, sourceWidget)) {
+      const requiredPlan = getRequiredPlanForWidget(sourceWidget);
+      return data({
+        error: `${sourceWidget.name || "This design"} requires the ${requiredPlan.name} plan or higher.`,
+      }, { status: 403 });
     }
 
     const ruleWidget = await prisma.widget.create({
@@ -1127,14 +1175,24 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   const selectedWidget = await prisma.widget.findFirst({
     where: { id: payload.widgetId, shop: session.shop },
-    select: { id: true },
   });
 
   if (!selectedWidget) {
     return data({ error: "Selected design was not found." }, { status: 400 });
   }
 
+  if (!canEditWidget(currentPlan.plan, selectedWidget)) {
+    const requiredPlan = getRequiredPlanForWidget(selectedWidget);
+    return data({
+      error: `The selected design requires the ${requiredPlan.name} plan or higher. Choose a basic design or upgrade before saving.`,
+    }, { status: 403 });
+  }
+
   const countrySource = String(formData.get("countrySource") || "manual") === "markets" ? "markets" : "manual";
+  if (countrySource === "markets" && !currentPlan.plan.limits.shopifyMarkets) {
+    return data({ error: "Shopify Markets targeting requires the Pro plan or higher." }, { status: 403 });
+  }
+
   const countryTargets = countrySource === "markets"
     ? parseMarketTargets(formData.get("marketSelections"))
     : buildManualCountryTargets(parseSelectedCountryCodes(formData.get("countryCodes")));
@@ -1182,6 +1240,22 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     dateLocale: payload.dateLocale,
     isActive: payload.isActive,
   };
+
+  if (payload.isActive) {
+    const activeRuleCount = await prisma.deliveryRule.count({
+      where: {
+        shop: session.shop,
+        isActive: true,
+        ...(isNew ? {} : { id: { not: routeId } }),
+      },
+    });
+
+    if (limitExceeded(currentPlan.plan.limits.activeRules, activeRuleCount, countryTargets.length)) {
+      return data({
+        error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.activeRules)} active delivery rule${currentPlan.plan.limits.activeRules === 1 ? "" : "s"}. Save this rule as draft or upgrade to add more active rules.`,
+      }, { status: 403 });
+    }
+  }
 
   if (isNew) {
     await prisma.$transaction(
@@ -1255,6 +1329,7 @@ export default function RuleEditorPage() {
     selectedCollections: loaderSelectedCollections,
     shopifyMarkets: loaderShopifyMarkets,
     shopifyMarketsError,
+    currentPlan,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData() as ActionResult | undefined;
   const productTargetFetcher = useFetcher<TargetResourcesLoadResult>();
@@ -1328,6 +1403,16 @@ export default function RuleEditorPage() {
     sourceDesignId,
     designName,
   });
+  const [upgradeModal, setUpgradeModal] = useState<UpgradeModalState>({ open: false });
+
+  const openUpgradeModal = useCallback((
+    featureName: string,
+    requiredPlanName?: string,
+    upgradeUrl = "/app/pricing",
+    message?: string,
+  ) => {
+    setUpgradeModal({ open: true, featureName, requiredPlanName, upgradeUrl, message });
+  }, []);
 
   const [localWidgets, setLocalWidgets] = useState<RuleEditorWidget[]>(
     () => widgets as RuleEditorWidget[],
@@ -1338,6 +1423,11 @@ export default function RuleEditorPage() {
   const selectedWidget = useMemo(() => {
     return typedWidgets.find((widget) => widget.id === widgetId) || typedWidgets[0];
   }, [typedWidgets, widgetId]);
+  const selectedWidgetRequiredPlan = useMemo(
+    () => getRequiredPlanForWidget(selectedWidget),
+    [selectedWidget],
+  );
+  const selectedWidgetLocked = Boolean(selectedWidget && !canEditWidget(currentPlan.plan, selectedWidget));
   const locationRowPreviewSettings = {
     showLocationSelector,
     locationPrefixText,
@@ -1404,6 +1494,26 @@ export default function RuleEditorPage() {
       return;
     }
 
+    if (countrySource === "markets" && !currentPlan.plan.limits.shopifyMarkets) {
+      openUpgradeModal(
+        "Shopify Markets targeting",
+        "Pro",
+        "/app/pricing?upgrade=markets",
+        "Shopify Markets targeting is available on the Pro plan or higher.",
+      );
+      return;
+    }
+
+    if (selectedWidgetLocked) {
+      openUpgradeModal(
+        selectedWidget?.name || "Selected design",
+        selectedWidgetRequiredPlan.name,
+        "/app/pricing?upgrade=design",
+        `The selected design requires the ${selectedWidgetRequiredPlan.name} plan or higher before this rule can be saved.`,
+      );
+      return;
+    }
+
     if (selectedCountryCodes.length === 0) {
       setCountryTargetError("Select at least one country.");
       return;
@@ -1443,12 +1553,22 @@ export default function RuleEditorPage() {
   };
 
   const handleCountrySourceChange = useCallback((source: CountrySource) => {
+    if (source === "markets" && !currentPlan.plan.limits.shopifyMarkets) {
+      openUpgradeModal(
+        "Shopify Markets targeting",
+        "Pro",
+        "/app/pricing?upgrade=markets",
+        "Upgrade to Pro to use Shopify Markets as the country source for delivery rules.",
+      );
+      return;
+    }
+
     setCountrySource(source);
     setCountryTargetError("");
     if (source === "manual") {
       setSelectedMarketIds([]);
     }
-  }, []);
+  }, [currentPlan.plan.limits.shopifyMarkets, openUpgradeModal]);
 
   const handleManualCountryChange = useCallback((codes: string[]) => {
     setCountryTargetError("");
@@ -1572,6 +1692,17 @@ export default function RuleEditorPage() {
   }, [selectedCollectionIds]);
 
   const handleUseTemplate = (template: TemplateMeta) => {
+    if (!canUseTemplate(currentPlan.plan, template.style)) {
+      const requiredPlan = requiredPlanForTemplate(template.style);
+      openUpgradeModal(
+        template.name,
+        requiredPlan.name,
+        "/app/pricing?upgrade=templates",
+        `${template.name} uses premium components that require the ${requiredPlan.name} plan or higher.`,
+      );
+      return;
+    }
+
     setPendingStyle(template.style);
     setPendingDesignId(null);
     submit(
@@ -1581,9 +1712,20 @@ export default function RuleEditorPage() {
   };
 
   const handleUseSavedDesign = (
-    widget: Pick<SavedWidget, "id" | "name">,
+    widget: Pick<SavedWidget, "id" | "name" | "customBlocks" | "requiredPlan">,
     options: { customizeAfterApply?: boolean } = {},
   ) => {
+    if (!canEditWidget(currentPlan.plan, widget)) {
+      const requiredPlan = getRequiredPlanForWidget(widget);
+      openUpgradeModal(
+        widget.name || "Selected design",
+        requiredPlan.name,
+        "/app/pricing?upgrade=designs",
+        `${widget.name || "This design"} includes premium components that require the ${requiredPlan.name} plan or higher.`,
+      );
+      return;
+    }
+
     setPendingStyle(null);
     setPendingDesignId(widget.id);
     setCustomizeAfterApply(Boolean(options.customizeAfterApply));
@@ -1676,6 +1818,15 @@ export default function RuleEditorPage() {
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 md:p-6 font-sans">
+      <UpgradePlanModal
+        open={upgradeModal.open}
+        onClose={() => setUpgradeModal({ open: false })}
+        featureName={upgradeModal.featureName}
+        requiredPlanName={upgradeModal.requiredPlanName}
+        currentPlanName={currentPlan.plan.name}
+        message={upgradeModal.message}
+        upgradeUrl={upgradeModal.upgradeUrl}
+      />
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div className="space-y-1">
@@ -1703,9 +1854,18 @@ export default function RuleEditorPage() {
             type="button"
             onClick={handleSave}
             disabled={isSubmitting}
-            className={`${BUTTON_PRIMARY} min-w-[112px] whitespace-nowrap`}
+            className={`${selectedWidgetLocked ? BUTTON_SECONDARY : BUTTON_PRIMARY} min-w-[112px] whitespace-nowrap`}
           >
-            {isSubmitting ? "Saving..." : "Save rule"}
+            {isSubmitting ? (
+              "Saving..."
+            ) : selectedWidgetLocked ? (
+              <>
+                <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                Upgrade to save
+              </>
+            ) : (
+              "Save rule"
+            )}
           </button>
         </div>
 
@@ -1783,16 +1943,29 @@ export default function RuleEditorPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (selectedWidgetLocked) {
+                          openUpgradeModal(
+                            selectedWidget.name || "Selected design",
+                            selectedWidgetRequiredPlan.name,
+                            "/app/pricing?upgrade=studio",
+                            `This design requires the ${selectedWidgetRequiredPlan.name} plan or higher before it can be customized.`,
+                          );
+                          return;
+                        }
                         if (selectedWidget.isReusable && !selectedWidget.isDefault) {
                           handleUseSavedDesign(selectedWidget, { customizeAfterApply: true });
                           return;
                         }
                         navigate(customizeUrl);
                       }}
-                      className={`${BUTTON_PRIMARY} gap-2 whitespace-nowrap`}
+                      className={`${selectedWidgetLocked ? BUTTON_SECONDARY : BUTTON_PRIMARY} gap-2 whitespace-nowrap`}
                     >
-                      <span className="h-4 w-4 text-white"><Icon source={EditIcon} /></span>
-                      Customize
+                      {selectedWidgetLocked ? (
+                        <LockGlyph className="h-4 w-4 text-gray-500" />
+                      ) : (
+                        <span className="h-4 w-4 text-white"><Icon source={EditIcon} /></span>
+                      )}
+                      {selectedWidgetLocked ? "Upgrade to customize" : "Customize"}
                     </button>
                   )}
                 </div>
@@ -1812,10 +1985,33 @@ export default function RuleEditorPage() {
                               : "Rule design"}
                         </p>
                       </div>
-                      <Badge tone={selectedWidget.isActive ? "success" : "attention"}>
-                        {selectedWidget.isActive ? "Active" : "Inactive"}
-                      </Badge>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedWidgetLocked) {
+                            openUpgradeModal(
+                              selectedWidget.name || "Selected design",
+                              selectedWidgetRequiredPlan.name,
+                              "/app/pricing?upgrade=design",
+                              `This selected design includes premium components that require the ${selectedWidgetRequiredPlan.name} plan or higher.`,
+                            );
+                          }
+                        }}
+                        className={`inline-flex items-center ${selectedWidgetLocked ? "cursor-pointer gap-1" : "cursor-default"}`}
+                      >
+                        {selectedWidgetLocked && <LockGlyph className="h-3.5 w-3.5 text-amber-700" />}
+                        <Badge tone={selectedWidgetLocked ? "warning" : selectedWidget.isActive ? "success" : "attention"}>
+                          {selectedWidgetLocked ? `${selectedWidgetRequiredPlan.name} required` : selectedWidget.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </button>
                     </div>
+                    {selectedWidgetLocked && (
+                      <Banner title="Selected design is locked by your current plan" tone="warning">
+                        <p>
+                          This rule can be viewed, but it cannot be saved or customized until you upgrade or choose a basic design.
+                        </p>
+                      </Banner>
+                    )}
                     <div className="relative flex min-h-[300px] items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/50 p-6">
                       <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] [background-size:24px_24px] opacity-20" />
                       <div className="relative z-10 w-full">
@@ -1852,12 +2048,15 @@ export default function RuleEditorPage() {
                       key={option.id}
                       type="button"
                       onClick={() => handleCountrySourceChange(option.id as CountrySource)}
-                      className={`h-9 rounded-xl px-3 text-xs font-bold transition-all ${
+                      className={`inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold transition-all ${
                         countrySource === option.id
                           ? "bg-gray-900 text-white shadow-sm"
                           : "text-gray-600 hover:bg-gray-50 hover:text-gray-950"
                       }`}
                     >
+                      {option.id === "markets" && !currentPlan.plan.limits.shopifyMarkets && (
+                        <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                      )}
                       {option.label}
                     </button>
                   ))}
@@ -2033,24 +2232,31 @@ export default function RuleEditorPage() {
               <div className="space-y-4 p-6">
                 <p className="text-sm font-semibold text-gray-800">Select option</p>
                 <div className="space-y-3">
-                  {INVENTORY_STATUS_OPTIONS.map((option) => (
-                    <label
-                      key={option.value}
-                      className="grid cursor-pointer grid-cols-[1.25rem_1fr] gap-3 rounded-xl px-1 py-1.5 text-sm text-gray-700"
-                    >
-                      <input
-                        type="radio"
-                        name="inventoryStatus"
-                        checked={inventoryStatus === option.value}
-                        onChange={() => setInventoryStatus(option.value)}
-                        className="mt-0.5 h-4 w-4 border-gray-300 text-gray-900 focus:ring-gray-900"
-                      />
-                      <span className="min-w-0">
-                        <span className="block font-semibold text-gray-900">{option.label}</span>
-                        <span className="mt-1 block leading-5 text-gray-500">{option.description}</span>
-                      </span>
-                    </label>
-                  ))}
+                  {INVENTORY_STATUS_OPTIONS.map((option) => {
+                    const optionId = `inventory-status-${option.value}`;
+
+                    return (
+                      <label
+                        key={option.value}
+                        htmlFor={optionId}
+                        aria-label={option.label}
+                        className="grid cursor-pointer grid-cols-[1.25rem_1fr] gap-3 rounded-xl px-1 py-1.5 text-sm text-gray-700"
+                      >
+                        <input
+                          id={optionId}
+                          type="radio"
+                          name="inventoryStatus"
+                          checked={inventoryStatus === option.value}
+                          onChange={() => setInventoryStatus(option.value)}
+                          className="mt-0.5 h-4 w-4 border-gray-300 text-gray-900 focus:ring-gray-900"
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-gray-900">{option.label}</span>
+                          <span className="mt-1 block leading-5 text-gray-500">{option.description}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -2135,8 +2341,9 @@ export default function RuleEditorPage() {
                         autoComplete="off"
                       />
                       <div>
-                        <label className="mb-1 block text-sm text-gray-900">Timezone</label>
+                        <label htmlFor="cutoffTimezone" className="mb-1 block text-sm text-gray-900">Timezone</label>
                         <select
+                          id="cutoffTimezone"
                           value={cutoffTimezone}
                           onChange={(event) => setCutoffTimezone(event.currentTarget.value)}
                           className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
@@ -2384,6 +2591,7 @@ export default function RuleEditorPage() {
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {visibleTemplates.map((template) => {
                       const isApplying = submittingIntent === "apply-template" && pendingStyle === template.style;
+                      const isLocked = !canUseTemplate(currentPlan.plan, template.style);
                       const settings = TEMPLATE_DEFAULTS[template.style];
                       const previewSettings = {
                         ...settings,
@@ -2415,9 +2623,18 @@ export default function RuleEditorPage() {
                               type="button"
                               onClick={() => handleUseTemplate(template)}
                               disabled={isSubmitting}
-                              className={`${BUTTON_PRIMARY} w-full`}
+                              className={`${isLocked ? BUTTON_SECONDARY : BUTTON_PRIMARY} w-full`}
                             >
-                              {isApplying ? "Applying..." : "Use template"}
+                              {isApplying ? (
+                                "Applying..."
+                              ) : isLocked ? (
+                                <>
+                                  <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                                  Upgrade to use
+                                </>
+                              ) : (
+                                "Use template"
+                              )}
                             </button>
                           </div>
                         </article>
@@ -2452,6 +2669,8 @@ export default function RuleEditorPage() {
                       const isApplying = submittingIntent === "saved-design" && pendingDesignId === widget.id;
                       const usedByRuleCount = widget.usedByRuleCount || 0;
                       const usageLabel = usedByRuleCount === 1 ? "Used by 1 rule" : `Used by ${usedByRuleCount} rules`;
+                      const designLocked = !canEditWidget(currentPlan.plan, widget);
+                      const designRequiredPlan = getRequiredPlanForWidget(widget);
 
                       return (
                         <article
@@ -2475,10 +2694,19 @@ export default function RuleEditorPage() {
                                 <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-gray-950">{widget.name}</h3>
                                 <span
                                   className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                    usedByRuleCount > 0 ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"
+                                    designLocked
+                                      ? "bg-amber-100 text-amber-800"
+                                      : usedByRuleCount > 0
+                                        ? "bg-blue-50 text-blue-700"
+                                        : "bg-gray-100 text-gray-600"
                                   }`}
                                 >
-                                  {usedByRuleCount > 0 ? usageLabel : "Unused"}
+                                  {designLocked ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <LockGlyph className="h-3 w-3" />
+                                      {designRequiredPlan.name} required
+                                    </span>
+                                  ) : usedByRuleCount > 0 ? usageLabel : "Unused"}
                                 </span>
                               </div>
                               <p className="mt-1 text-xs leading-4 text-gray-500">Updated {updatedAt}</p>
@@ -2488,9 +2716,18 @@ export default function RuleEditorPage() {
                                 type="button"
                                 onClick={() => handleUseSavedDesign(widget)}
                                 disabled={isSubmitting}
-                                className={`${BUTTON_PRIMARY} w-full`}
+                                className={`${designLocked ? BUTTON_SECONDARY : BUTTON_PRIMARY} w-full`}
                               >
-                                {isApplying ? "Applying..." : "Use design"}
+                                {isApplying ? (
+                                  "Applying..."
+                                ) : designLocked ? (
+                                  <>
+                                    <LockGlyph className="mr-1.5 h-3.5 w-3.5" />
+                                    Upgrade to use
+                                  </>
+                                ) : (
+                                  "Use design"
+                                )}
                               </button>
                             </div>
                           </div>

@@ -108,6 +108,9 @@ model AppSetting {
   locationPrefixText    String  @default("Delivery to")
   showLocationFlag      Boolean @default(true)
   locationRowAlignment  String  @default("right")
+  planHandle            String  @default("free")
+  planSubscriptionId    String?
+  planSyncedAt          DateTime?
   policyText    String?  @db.Text
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -121,6 +124,8 @@ model Widget {
   isActive  Boolean @default(true)
   isReusable Boolean @default(true)
   sourceWidgetId String?
+  sourceTemplateId String?
+  requiredPlan String @default("free")
 
   // Display Rules
   targetCountries Json? // e.g. ["US", "VN"]

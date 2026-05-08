@@ -6,6 +6,14 @@ import {
   parseBlockConfigs,
   parseJsonArrayField,
 } from "./delivery";
+import {
+  canEditWidget,
+  getRequiredPlanForBlocks,
+  getRequiredPlanForWidget,
+  isAtLeastPlan,
+  PRICING_PLANS,
+  type PricingPlan,
+} from "./pricing";
 
 export type WidgetStudioDb = Pick<PrismaClient, "widget" | "$transaction">;
 
@@ -37,15 +45,18 @@ export async function saveWidgetStudio({
   id,
   requestUrl,
   shop,
+  currentPlan,
 }: {
   db: WidgetStudioDb;
   formData: FormData;
   id: string | undefined;
   requestUrl: string;
   shop: string;
+  currentPlan: PricingPlan;
 }): Promise<SaveWidgetStudioResult> {
   const url = new URL(requestUrl);
   const widgetId = id || "";
+  const sourceTemplateId = String(url.searchParams.get("template") || "").trim();
   const saveAsDesign =
     url.searchParams.get("saveAsDesign") === "1" || formData.get("saveAsDesign") === "true";
   const sourceDesignId = String(
@@ -77,6 +88,29 @@ export async function saveWidgetStudio({
   }
 
   const customBlocks = parseBlockConfigs(customBlocksRaw);
+  const requiredPlan = getRequiredPlanForBlocks(customBlocks);
+  if (!isAtLeastPlan(currentPlan.handle, requiredPlan)) {
+    return {
+      error: `This design requires the ${PRICING_PLANS[requiredPlan].name} plan or higher. Remove premium components or upgrade before saving.`,
+      status: 403,
+    };
+  }
+
+  if (widgetId && widgetId !== "new") {
+    const existingWidget = await db.widget.findFirst({
+      where: { id: widgetId, shop },
+      select: { customBlocks: true, requiredPlan: true },
+    });
+
+    if (existingWidget && !canEditWidget(currentPlan, existingWidget)) {
+      const existingRequiredPlan = getRequiredPlanForWidget(existingWidget);
+      return {
+        error: `This design is locked on your ${currentPlan.name} plan because it requires the ${existingRequiredPlan.name} plan or higher.`,
+        status: 403,
+      };
+    }
+  }
+
   const targetCountries = normalizeCountries(targetCountriesRaw);
   const targetProducts = normalizeProductIds(targetProductsRaw);
   const targetTags = normalizeTags(targetTagsRaw);
@@ -98,13 +132,20 @@ export async function saveWidgetStudio({
     padding,
     bgGradient,
     showTimeline,
+    requiredPlan,
     targetCountries: targetCountries as Prisma.InputJsonValue,
     targetProducts: targetProducts as Prisma.InputJsonValue,
     targetTags: targetTags as Prisma.InputJsonValue,
   };
 
   if (widgetId === "new") {
-    const newWidget = await db.widget.create({ data: { ...data, isReusable: true } });
+    const newWidget = await db.widget.create({
+      data: {
+        ...data,
+        isReusable: true,
+        sourceTemplateId: sourceTemplateId || null,
+      },
+    });
     return { success: true, newId: newWidget.id };
   }
 
@@ -121,6 +162,7 @@ export async function saveWidgetStudio({
           isDefault: false,
           isReusable: true,
           sourceWidgetId: sourceDesignId || widgetId,
+          sourceTemplateId: sourceTemplateId || null,
         },
       }),
     ]);

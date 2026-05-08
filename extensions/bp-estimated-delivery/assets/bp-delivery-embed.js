@@ -380,7 +380,9 @@
         var displayNames = new Intl.DisplayNames([locale], { type: "region" });
         return displayNames.of(country) || country;
       }
-    } catch (_error) {}
+    } catch (_error) {
+      return country;
+    }
     return country;
   }
 

@@ -31,13 +31,15 @@ import {
   DeleteIcon,
   ArrowUpIcon,
   ArrowDownIcon,
-  ViewIcon
+  ViewIcon,
+  LockIcon
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { WidgetPreviewRenderer } from "../components/WidgetRenderer";
 import { IconLibraryModal } from "../components/IconLibraryModal";
 import type { IconLibrarySelection } from "../components/IconLibraryModal";
+import { LockGlyph, UpgradePlanModal } from "../components/UpgradePlanModal";
 import { TEMPLATE_DEFAULTS } from "../constants/templateDefaults";
 import {
   buildFallbackBlocks,
@@ -52,6 +54,17 @@ import {
 import type { BlockType, PolicyItemConfig, StepItemConfig, TrustBadgeConfig, WidgetStyleId } from "../lib/delivery";
 import { saveWidgetStudio } from "../lib/widgetStudio.server";
 import type { SaveWidgetStudioResult } from "../lib/widgetStudio.server";
+import {
+  canEditWidget,
+  getRequiredPlanForBlock,
+  getRequiredPlanForStepPreset,
+  getRequiredPlanForWidget,
+  isAtLeastPlan,
+  limitExceeded,
+  limitLabel,
+  PRICING_PLANS,
+} from "../lib/pricing";
+import { syncCurrentPlanForShop } from "../lib/pricing.server";
 import {
   createTemplatePalette,
   hydrateBlockStyleSamples,
@@ -68,6 +81,14 @@ type ShopifyAdminGlobal = {
   toast?: {
     show?: (message: string, options?: { isError?: boolean }) => void;
   };
+};
+
+type UpgradeModalState = {
+  open: boolean;
+  featureName?: string;
+  requiredPlanName?: string;
+  message?: string;
+  upgradeUrl?: string;
 };
 
 // ─── Reusable Elite Pro Color Picker (Genuine Chrome Style) ──────────────────
@@ -354,7 +375,8 @@ function returnToWithSelectedWidget(value: string | null, selectedWidgetId: stri
 }
 
 export const loader = async ({ params, request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const widgetId = params.id;
   const url = new URL(request.url);
   const templateId = url.searchParams.get("template");
@@ -363,32 +385,42 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
     // Return default data based on template
     const defaultData =
       TEMPLATE_DEFAULTS[templateId as WidgetStyleId] || TEMPLATE_DEFAULTS.eco_delivery;
+    const templateBlocks = defaultData.customBlocks?.length
+      ? defaultData.customBlocks
+      : buildFallbackBlocks(defaultData);
+    const widget = {
+      id: "new",
+      name: `New Widget (${templateId || 'General'})`,
+      isActive: true,
+      isDefault: false,
+      isReusable: true,
+      sourceWidgetId: null,
+      sourceTemplateId: templateId || null,
+      requiredPlan: getRequiredPlanForWidget({ customBlocks: templateBlocks }).handle,
+      widgetStyle: defaultData.style,
+      customBlocks: templateBlocks,
+      textColor: defaultData.textColor || "#000000",
+      iconColor: defaultData.iconColor || "#0033cc",
+      bgColor: defaultData.bgColor || "#ffffff",
+      borderColor: defaultData.borderColor || "#e5e7eb",
+      borderRadius: defaultData.borderRadius || 10,
+      shadow: defaultData.shadow || "none",
+      glassmorphism: defaultData.glassmorphism || false,
+      padding: defaultData.padding ?? 16,
+      bgGradient: defaultData.bgGradient || "",
+      showTimeline: defaultData.showTimeline ?? true,
+      targetCountries: [],
+      targetProducts: [],
+      targetTags: [],
+    };
+
     return routerData({ 
       widget: {
-        id: "new",
-        name: `New Widget (${templateId || 'General'})`,
-        isActive: true,
-        isDefault: false,
-        isReusable: true,
-        sourceWidgetId: null,
-        widgetStyle: defaultData.style,
-        customBlocks: defaultData.customBlocks?.length
-          ? defaultData.customBlocks
-          : buildFallbackBlocks(defaultData),
-        textColor: defaultData.textColor || "#000000",
-        iconColor: defaultData.iconColor || "#0033cc",
-        bgColor: defaultData.bgColor || "#ffffff",
-        borderColor: defaultData.borderColor || "#e5e7eb",
-        borderRadius: defaultData.borderRadius || 10,
-        shadow: defaultData.shadow || "none",
-        glassmorphism: defaultData.glassmorphism || false,
-        padding: defaultData.padding ?? 16,
-        bgGradient: defaultData.bgGradient || "",
-        showTimeline: defaultData.showTimeline ?? true,
-        targetCountries: [],
-        targetProducts: [],
-        targetTags: [],
-      } 
+        ...widget,
+      },
+      currentPlan,
+      canEditCurrentWidget: canEditWidget(currentPlan.plan, widget),
+      currentWidgetRequiredPlan: getRequiredPlanForWidget(widget),
     });
   }
 
@@ -398,13 +430,36 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
 
   if (!widget) throw new Error("Widget not found");
 
-  return routerData({ widget });
+  return routerData({
+    widget,
+    currentPlan,
+    canEditCurrentWidget: canEditWidget(currentPlan.plan, widget),
+    currentWidgetRequiredPlan: getRequiredPlanForWidget(widget),
+  });
 };
 
 // ─── Action ──────────────────────────────────────────────────────────────────
 export const action = async ({ params, request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
+  const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
   const formData = await request.formData();
+  const url = new URL(request.url);
+  const willCreateSavedDesign =
+    params.id === "new" ||
+    url.searchParams.get("saveAsDesign") === "1" ||
+    formData.get("saveAsDesign") === "true";
+
+  if (willCreateSavedDesign) {
+    const savedDesignCount = await prisma.widget.count({
+      where: { shop: session.shop, isDefault: false, isReusable: true },
+    });
+
+    if (limitExceeded(currentPlan.plan.limits.savedDesigns, savedDesignCount)) {
+      return routerData({
+        error: `Your ${currentPlan.plan.name} plan includes ${limitLabel(currentPlan.plan.limits.savedDesigns)} saved My Design${currentPlan.plan.limits.savedDesigns === 1 ? "" : "s"}. Upgrade to save more designs.`,
+      }, { status: 403 });
+    }
+  }
 
   const result = await saveWidgetStudio({
     db: prisma,
@@ -412,6 +467,7 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
     id: params.id,
     requestUrl: request.url,
     shop: session.shop,
+    currentPlan: currentPlan.plan,
   });
 
   const { status, ...payload } = result;
@@ -419,7 +475,7 @@ export const action = async ({ params, request }: ActionFunctionArgs) => {
 };
 
 export default function VisualBuilderStudio() {
-  const { widget } = useLoaderData<typeof loader>();
+  const { widget, currentPlan, canEditCurrentWidget, currentWidgetRequiredPlan } = useLoaderData<typeof loader>();
   const location = useLocation();
   const navigate = useNavigate();
   const submit = useSubmit();
@@ -439,7 +495,17 @@ export default function VisualBuilderStudio() {
   const isRuleDesign = baseReturnTo.startsWith("/app/rules/") && !widget.isReusable;
   const isSavingToDesign = isSaving && navigation.formData?.get("saveAction") === "library";
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [upgradeModal, setUpgradeModal] = useState<UpgradeModalState>({ open: false });
   const toastTimerRef = React.useRef<number | null>(null);
+
+  const openUpgradeModal = useCallback((
+    featureName: string,
+    requiredPlanName?: string,
+    upgradeUrl = "/app/pricing",
+    message?: string,
+  ) => {
+    setUpgradeModal({ open: true, featureName, requiredPlanName, upgradeUrl, message });
+  }, []);
 
   const showToast = useCallback((message: string, isError = false) => {
     const shopify = (window as Window & { shopify?: ShopifyAdminGlobal }).shopify;
@@ -528,12 +594,26 @@ export default function VisualBuilderStudio() {
       hydrateBlockStyleSamples(block, templatePalette),
     ),
   );
+  const editorLocked = !canEditCurrentWidget;
+  const requiredPlanName = currentWidgetRequiredPlan?.name || PRICING_PLANS.free.name;
+  const currentPlanName = currentPlan?.plan?.name || PRICING_PLANS.free.name;
   const targetCountries = normalizeCountries(widget.targetCountries);
   const targetProducts = normalizeProductIds(widget.targetProducts);
   const targetTags = normalizeTags(widget.targetTags);
   const [iconPickerTarget, setIconPickerTarget] = useState<{ blockId?: string; field?: string; open: boolean }>({ open: false });
 
   const handleSave = useCallback((options: { saveAsDesign?: boolean } = {}) => {
+    if (editorLocked) {
+      openUpgradeModal(
+        widget.name || "This design",
+        requiredPlanName,
+        "/app/pricing?upgrade=studio",
+        `This design requires the ${requiredPlanName} plan or higher before it can be saved.`,
+      );
+      showToast(`This design requires the ${requiredPlanName} plan. Remove premium components or upgrade before saving.`, true);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("name", name);
     formData.append("isActive", String(isActive));
@@ -560,9 +640,29 @@ export default function VisualBuilderStudio() {
     formData.append("designName", designName);
     
     submit(formData, { method: "post" });
-  }, [name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, shouldSaveAsDesign, sourceDesignId, designName, submit]);
+  }, [editorLocked, openUpgradeModal, showToast, requiredPlanName, widget.name, name, isActive, isDefault, widgetStyle, blocks, textColor, iconColor, bgColor, borderColor, borderRadius, shadow, glassmorphism, padding, bgGradient, showTimeline, targetCountries, targetProducts, targetTags, shouldSaveAsDesign, sourceDesignId, designName, submit]);
 
   const addBlock = (type: string) => {
+    const requiredPlan = getRequiredPlanForBlock({ id: "preview", type: type as BlockType, settings: {} });
+    if (editorLocked) {
+      openUpgradeModal(
+        widget.name || "This design",
+        requiredPlanName,
+        "/app/pricing?upgrade=studio",
+        `This design requires the ${requiredPlanName} plan or higher before components can be edited.`,
+      );
+      return;
+    }
+    if (!isAtLeastPlan(currentPlan.plan.handle, requiredPlan)) {
+      openUpgradeModal(
+        getBlockLabel(type),
+        PRICING_PLANS[requiredPlan].name,
+        `/app/pricing?upgrade=component-${type}`,
+        `${getBlockLabel(type)} is available on the ${PRICING_PLANS[requiredPlan].name} plan or higher.`,
+      );
+      return;
+    }
+
     const id = createEditorId("block");
     const defaultSettings: any = {};
     if (type === 'steps') {
@@ -921,6 +1021,31 @@ export default function VisualBuilderStudio() {
   };
 
   const renderBlockEditor = () => {
+    if (editorLocked) {
+      return (
+        <Card>
+          <BlockStack gap="300">
+            <InlineStack gap="100" blockAlign="center">
+              <LockGlyph className="h-3.5 w-3.5 text-amber-700" />
+              <Badge tone="warning">Upgrade required</Badge>
+            </InlineStack>
+            <Text variant="headingMd" as="h3">Design locked</Text>
+            <Text as="p" tone="subdued">
+              This design requires the {requiredPlanName} plan or higher. Upgrade or remove premium components before editing.
+            </Text>
+            <Button onClick={() => openUpgradeModal(
+              widget.name || "This design",
+              requiredPlanName,
+              "/app/pricing?upgrade=studio",
+              `This design requires the ${requiredPlanName} plan or higher before it can be edited.`,
+            )}>
+              View plans
+            </Button>
+          </BlockStack>
+        </Card>
+      );
+    }
+
     const activeBlock = getActiveBlock();
     if (!activeBlock) {
       return (
@@ -997,22 +1122,55 @@ export default function VisualBuilderStudio() {
                     { id: 'split_segments', name: 'Premium Blocks', icon: LayoutColumns2Icon },
                     { id: 'boxed_cards', name: 'Boxed Cards', icon: DuplicateIcon },
                     { id: 'vertical', name: 'Vertical List', icon: ProductIcon },
-                  ].map(p => (
+                  ].map(p => {
+                    const requiredPlan = getRequiredPlanForStepPreset(p.id);
+                    const presetLocked = !isAtLeastPlan(currentPlan.plan.handle, requiredPlan);
+                    return (
                     <div 
                       key={p.id}
-                      onClick={() => updateBlockSettings(id, { preset: p.id })}
+                      onClick={() => {
+                        if (presetLocked) {
+                          openUpgradeModal(
+                            p.name,
+                            PRICING_PLANS[requiredPlan].name,
+                            `/app/pricing?upgrade=step-preset-${p.id}`,
+                            `${p.name} is available on the ${PRICING_PLANS[requiredPlan].name} plan or higher.`,
+                          );
+                          return;
+                        }
+                        updateBlockSettings(id, { preset: p.id });
+                      }}
                       style={{ 
                         cursor: 'pointer', padding: '16px', border: s.preset === p.id ? `2px solid ${iconColor}` : '1px solid #e1e3e5', 
                         borderRadius: '12px', textAlign: 'center', background: s.preset === p.id ? `${iconColor}05` : 'white',
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s',
+                        opacity: presetLocked ? 0.58 : 1,
                       }}
+                      title={presetLocked ? `${p.name} requires the ${PRICING_PLANS[requiredPlan].name} plan` : p.name}
                     >
                       <Icon source={p.icon} tone={s.preset === p.id ? 'caution' : 'base'} />
                       <Box paddingBlockStart="200">
                         <Text variant="bodySm" fontWeight="bold" as="p">{p.name}</Text>
+                        {presetLocked && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              marginTop: 4,
+                              fontSize: 12,
+                              fontWeight: 650,
+                              color: "#6b7280",
+                            }}
+                          >
+                            <LockGlyph className="h-3 w-3" />
+                            {PRICING_PLANS[requiredPlan].name}
+                          </span>
+                        )}
                       </Box>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </BlockStack>
             ) : (
@@ -1506,6 +1664,15 @@ export default function VisualBuilderStudio() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f6f6f7' }}>
+      <UpgradePlanModal
+        open={upgradeModal.open}
+        onClose={() => setUpgradeModal({ open: false })}
+        featureName={upgradeModal.featureName}
+        requiredPlanName={upgradeModal.requiredPlanName}
+        currentPlanName={currentPlanName}
+        message={upgradeModal.message}
+        upgradeUrl={upgradeModal.upgradeUrl}
+      />
       
       {/* ─── STUDIO HEADER ─────────────────────────────────────────────────── */}
       <Box padding="300" background="bg-surface" borderBlockEndWidth="025" borderColor="border">
@@ -1537,7 +1704,7 @@ export default function VisualBuilderStudio() {
             </Box>
             {isRuleDesign && (
               <Button
-                icon={DuplicateIcon}
+                icon={editorLocked ? LockIcon : DuplicateIcon}
                 onClick={() => handleSave({ saveAsDesign: true })}
                 loading={isSavingToDesign}
               >
@@ -1546,7 +1713,7 @@ export default function VisualBuilderStudio() {
             )}
             <Button
               variant="primary"
-              icon={SaveIcon}
+              icon={editorLocked ? LockIcon : SaveIcon}
               onClick={() => handleSave()}
               loading={isSaving && !isSavingToDesign}
             >
@@ -1568,6 +1735,21 @@ export default function VisualBuilderStudio() {
           }}
         >
           {actionData.error}
+        </div>
+      )}
+
+      {editorLocked && (
+        <div
+          style={{
+            borderBottom: "1px solid #fed7aa",
+            background: "#fff7ed",
+            color: "#9a3412",
+            fontSize: 13,
+            fontWeight: 650,
+            padding: "10px 16px",
+          }}
+        >
+          This design requires the {requiredPlanName} plan or higher. Your current plan is {currentPlanName}.
         </div>
       )}
 
@@ -1655,12 +1837,15 @@ export default function VisualBuilderStudio() {
                     blocks.map((b, i) => (
                       <div 
                         key={b.id} 
-                        onClick={() => setActiveBlockId(b.id)}
+                        onClick={() => {
+                          if (!editorLocked) setActiveBlockId(b.id);
+                        }}
                         style={{
                           padding: '10px 12px', borderRadius: '8px', 
                           border: `1px solid ${activeBlockId === b.id ? '#008060' : '#e1e3e5'}`,
                           background: activeBlockId === b.id ? '#f0fdf4' : 'white',
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                          cursor: editorLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+                          opacity: editorLocked ? 0.72 : 1,
                         }}
                       >
                         <Icon source={ProductIcon} tone={activeBlockId === b.id ? 'success' : 'subdued'} />
@@ -1670,8 +1855,8 @@ export default function VisualBuilderStudio() {
                           </Text>
                         </div>
                         <div style={{ display: 'flex', gap: '4px' }}>
-                           <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={i===0} onClick={() => moveBlock(i, 'up')} />
-                           <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={i===blocks.length-1} onClick={() => moveBlock(i, 'down')} />
+                           <Button icon={ArrowUpIcon} variant="tertiary" size="micro" disabled={editorLocked || i===0} onClick={() => moveBlock(i, 'up')} />
+                           <Button icon={ArrowDownIcon} variant="tertiary" size="micro" disabled={editorLocked || i===blocks.length-1} onClick={() => moveBlock(i, 'down')} />
                         </div>
                       </div>
                     ))
@@ -1681,11 +1866,87 @@ export default function VisualBuilderStudio() {
                 <Divider />
                 <Text variant="bodySm" fontWeight="bold" tone="subdued" as="p">ADD COMPONENTS</Text>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                   {['header', 'promise_card', 'steps', 'timer', 'banner', 'trust_badges', 'policy_accordion', 'progress', 'image', 'spacer', 'divider', 'dual_info'].map(t => (
-                     <Button key={t} onClick={() => addBlock(t)} icon={PlusIcon} textAlign="left">
-                        {getBlockLabel(t)}
-                     </Button>
-                   ))}
+                   {['header', 'promise_card', 'steps', 'timer', 'banner', 'trust_badges', 'policy_accordion', 'progress', 'image', 'spacer', 'divider', 'dual_info'].map(t => {
+                     const requiredPlan = getRequiredPlanForBlock({ id: "option", type: t as BlockType, settings: {} });
+                     const locked = editorLocked || !isAtLeastPlan(currentPlan.plan.handle, requiredPlan);
+                     const blockLabel = getBlockLabel(t);
+                     return (
+                     <div
+                       key={t}
+                       role={locked ? "button" : undefined}
+                       tabIndex={locked ? 0 : undefined}
+                       title={locked ? (editorLocked ? "This design is locked" : `Requires ${PRICING_PLANS[requiredPlan].name} plan`) : undefined}
+                       onClick={() => {
+                         if (!locked) return;
+                         if (editorLocked) {
+                           openUpgradeModal(
+                             widget.name || "This design",
+                             requiredPlanName,
+                             "/app/pricing?upgrade=studio",
+                             `This design requires the ${requiredPlanName} plan or higher before components can be edited.`,
+                           );
+                           return;
+                         }
+                         openUpgradeModal(
+                           blockLabel,
+                           PRICING_PLANS[requiredPlan].name,
+                           `/app/pricing?upgrade=component-${t}`,
+                           `${blockLabel} is available on the ${PRICING_PLANS[requiredPlan].name} plan or higher.`,
+                         );
+                       }}
+                       onKeyDown={(event) => {
+                         if (!locked) return;
+                         if (event.key !== "Enter" && event.key !== " ") return;
+                         event.preventDefault();
+                         event.currentTarget.click();
+                       }}
+                       style={{ cursor: locked ? "pointer" : "default", minHeight: 36, width: "100%" }}
+                     >
+                       <button
+                         type="button"
+                         onClick={() => {
+                           if (!locked) addBlock(t);
+                         }}
+                         disabled={locked}
+                         style={{
+                           pointerEvents: locked ? "none" : "auto",
+                           width: "100%",
+                           height: 36,
+                           display: "flex",
+                           alignItems: "center",
+                           gap: 7,
+                           padding: "0 10px",
+                           border: "1px solid #d9d9d9",
+                           borderRadius: 8,
+                           background: locked ? "#f4f4f5" : "#ffffff",
+                           boxShadow: "0 1px 0 rgba(0, 0, 0, 0.04)",
+                           color: locked ? "#aeb4bd" : "#303030",
+                           cursor: locked ? "not-allowed" : "pointer",
+                           fontSize: 12,
+                           fontWeight: 550,
+                           lineHeight: "14px",
+                           textAlign: "left",
+                           transition: "background 120ms ease, border-color 120ms ease",
+                         }}
+                       >
+                         <span style={{ flex: "0 0 16px", height: 16, width: 16, color: locked ? "#b8bec7" : "#303030" }}>
+                           <Icon source={locked ? LockIcon : PlusIcon} />
+                         </span>
+                         <span
+                           style={{
+                             minWidth: 0,
+                             color: "inherit",
+                             fontSize: 12,
+                             fontWeight: 550,
+                             lineHeight: "14px",
+                           }}
+                         >
+                           {blockLabel}
+                         </span>
+                       </button>
+                     </div>
+                     );
+                   })}
                 </div>
               </BlockStack>
             )}

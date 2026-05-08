@@ -27,6 +27,8 @@ export type SavedWidget = {
   isDefault: boolean;
   isActive: boolean;
   widgetStyle: string;
+  sourceTemplateId?: string | null;
+  requiredPlan?: string | null;
   customBlocks: unknown;
   textColor: string;
   iconColor: string;

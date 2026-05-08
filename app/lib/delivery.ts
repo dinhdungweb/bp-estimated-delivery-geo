@@ -165,7 +165,7 @@ export interface WidgetSettingsProps {
 
 export interface APIDeliveryResponse {
   enabled: boolean;
-  reason?: "missing_session" | "disabled_or_missing_config";
+  reason?: "missing_session" | "disabled_or_missing_config" | "plan_limit";
   widgetId?: string;
   countryCode?: string;
   orderDate?: string;
