@@ -1,11 +1,10 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
+  Form,
   data,
   redirect,
   useActionData,
   useLoaderData,
-  useNavigation,
-  useSubmit,
 } from "react-router";
 import { Badge, Banner } from "@shopify/polaris";
 import { useEffect, useMemo, useState } from "react";
@@ -125,12 +124,8 @@ export default function PricingPage() {
     isTestMode,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData() as ActionResult | undefined;
-  const navigation = useNavigation();
-  const submit = useSubmit();
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
-  const submittingPlan = String(navigation.formData?.get("plan") || "");
-  const isSubmitting = navigation.state === "submitting";
   const currentRank = planRank(currentPlan.plan.handle);
   const shouldShowNotice = !noticeDismissed && (billingSuccess || billingCancelled || Boolean(upgradeReason));
 
@@ -150,10 +145,6 @@ export default function PricingPage() {
   useEffect(() => {
     setNoticeDismissed(false);
   }, [billingCancelled, billingSuccess, upgradeReason]);
-
-  const selectPlan = (planHandle: PlanHandle) => {
-    submit({ intent: "select-plan", plan: planHandle }, { method: "post" });
-  };
 
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
@@ -203,7 +194,6 @@ export default function PricingPage() {
           {plans.map((plan) => {
             const isCurrent = plan.handle === currentPlan.plan.handle;
             const isDowngrade = planRank(plan.handle) < currentRank;
-            const isBusy = isSubmitting && submittingPlan === plan.handle;
             const activeRuleUsage = `${usage.activeRules} / ${limitLabel(plan.limits.activeRules)}`;
             const savedDesignUsage = `${usage.savedDesigns} / ${limitLabel(plan.limits.savedDesigns)}`;
 
@@ -266,22 +256,23 @@ export default function PricingPage() {
                   ))}
                 </ul>
 
-                <button
-                  type="button"
-                  onClick={() => selectPlan(plan.handle)}
-                  disabled={isCurrent || isBusy}
-                  className={plan.recommended || isAtLeastPlan(plan.handle, "pro") ? BUTTON_PRIMARY : BUTTON_SECONDARY}
-                >
-                  {isBusy
-                    ? "Opening Shopify pricing..."
-                    : isCurrent
+                <Form method="post" reloadDocument>
+                  <input type="hidden" name="intent" value="select-plan" />
+                  <input type="hidden" name="plan" value={plan.handle} />
+                  <button
+                    type="submit"
+                    disabled={isCurrent}
+                    className={`w-full ${plan.recommended || isAtLeastPlan(plan.handle, "pro") ? BUTTON_PRIMARY : BUTTON_SECONDARY}`}
+                  >
+                    {isCurrent
                       ? "Current plan"
                       : plan.handle === "free"
                         ? "Downgrade to Free"
                         : isDowngrade
                           ? `Switch to ${plan.name}`
                           : `Upgrade to ${plan.name}`}
-                </button>
+                  </button>
+                </Form>
               </article>
             );
           })}
