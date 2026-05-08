@@ -119,4 +119,27 @@ describe("pricing return URL", () => {
       }
     }
   });
+
+  it("preserves embedded app context after billing approval", () => {
+    const previousAppUrl = process.env.SHOPIFY_APP_URL;
+    process.env.SHOPIFY_APP_URL = "https://estimated-delivery.bluepeaks.top";
+
+    try {
+      const result = pricingReturnUrl(
+        new Request(
+          "http://estimated-delivery.bluepeaks.top/app/pricing?embedded=1&shop=bp-estimated-delivery-geo.myshopify.com&host=abc123",
+        ),
+      );
+
+      expect(result).toBe(
+        "https://estimated-delivery.bluepeaks.top/app/pricing?shop=bp-estimated-delivery-geo.myshopify.com&host=abc123&embedded=1&billing=success",
+      );
+    } finally {
+      if (previousAppUrl === undefined) {
+        delete process.env.SHOPIFY_APP_URL;
+      } else {
+        process.env.SHOPIFY_APP_URL = previousAppUrl;
+      }
+    }
+  });
 });

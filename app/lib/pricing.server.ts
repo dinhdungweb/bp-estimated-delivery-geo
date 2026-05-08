@@ -157,7 +157,14 @@ export async function syncCurrentPlanForShop(
 
 export function pricingReturnUrl(request: Request, search = "billing=success") {
   const appUrl = process.env.SHOPIFY_APP_URL || request.url;
+  const requestUrl = new URL(request.url);
   const url = new URL("/app/pricing", appUrl);
+
+  ["shop", "host", "embedded"].forEach((key) => {
+    const value = requestUrl.searchParams.get(key);
+    if (value) url.searchParams.set(key, value);
+  });
+
   if (search) {
     const params = new URLSearchParams(search);
     params.forEach((value, key) => url.searchParams.set(key, value));
