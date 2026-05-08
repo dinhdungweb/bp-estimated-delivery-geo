@@ -8,6 +8,7 @@ import {
 } from "../lib/pricing";
 import {
   currentPlanWithCachedFallback,
+  pricingReturnUrl,
   type CurrentPlan,
 } from "../lib/pricing.server";
 
@@ -96,5 +97,26 @@ describe("pricing cache fallback", () => {
 
     expect(result.plan.handle).toBe("free");
     expect(result.hasActivePayment).toBe(false);
+  });
+});
+
+describe("pricing return URL", () => {
+  it("uses SHOPIFY_APP_URL instead of the proxied request protocol", () => {
+    const previousAppUrl = process.env.SHOPIFY_APP_URL;
+    process.env.SHOPIFY_APP_URL = "https://estimated-delivery.bluepeaks.top";
+
+    try {
+      const result = pricingReturnUrl(
+        new Request("http://estimated-delivery.bluepeaks.top/app/pricing"),
+      );
+
+      expect(result).toBe("https://estimated-delivery.bluepeaks.top/app/pricing?billing=success");
+    } finally {
+      if (previousAppUrl === undefined) {
+        delete process.env.SHOPIFY_APP_URL;
+      } else {
+        process.env.SHOPIFY_APP_URL = previousAppUrl;
+      }
+    }
   });
 });

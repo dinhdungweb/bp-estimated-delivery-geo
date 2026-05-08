@@ -10,6 +10,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: "3002",
+        SHOPIFY_APP_URL: "https://estimated-delivery.bluepeaks.top",
       },
       max_memory_restart: "512M",
       time: true,
