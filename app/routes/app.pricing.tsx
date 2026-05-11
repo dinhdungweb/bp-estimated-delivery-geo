@@ -261,13 +261,15 @@ export default function PricingPage() {
                       : "border-gray-200"
                 }`}
               >
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div>
+                <div className="mb-4">
+                  <div className="flex min-h-6 items-center justify-between gap-3">
                     <h2 className="text-base font-bold text-gray-950">{plan.name}</h2>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">{plan.description}</p>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {plan.recommended && <Badge tone="info">Popular</Badge>}
+                      {isCurrent && <Badge tone="success">Current</Badge>}
+                    </div>
                   </div>
-                  {plan.recommended && <Badge tone="info">Popular</Badge>}
-                  {isCurrent && <Badge tone="success">Current</Badge>}
+                  <p className="mt-2 text-xs leading-5 text-gray-500">{plan.description}</p>
                 </div>
 
                 <div className="mb-4">
