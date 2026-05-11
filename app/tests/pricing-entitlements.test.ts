@@ -7,8 +7,11 @@ import {
   eligibleRuleRankMap,
 } from "../lib/pricing";
 import {
+  adminHostParamForShop,
   currentPlanWithCachedFallback,
+  embeddedPricingActionPath,
   pricingReturnUrl,
+  shopHandleFromShopDomain,
   type CurrentPlan,
 } from "../lib/pricing.server";
 
@@ -179,5 +182,37 @@ describe("pricing return URL", () => {
         process.env.SHOPIFY_APP_URL = previousAppUrl;
       }
     }
+  });
+});
+
+describe("pricing action URL", () => {
+  it("builds embedded context from the authenticated shop when URL params are missing", () => {
+    const result = embeddedPricingActionPath(
+      new Request("https://estimated-delivery.bluepeaks.top/app/pricing"),
+      "smart-bundle-upsell.myshopify.com",
+    );
+
+    expect(shopHandleFromShopDomain("smart-bundle-upsell.myshopify.com")).toBe(
+      "smart-bundle-upsell",
+    );
+    expect(adminHostParamForShop("smart-bundle-upsell.myshopify.com")).toBe(
+      "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvc21hcnQtYnVuZGxlLXVwc2VsbA",
+    );
+    expect(result).toBe(
+      "/app/pricing?shop=smart-bundle-upsell.myshopify.com&host=YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvc21hcnQtYnVuZGxlLXVwc2VsbA&embedded=1",
+    );
+  });
+
+  it("preserves host from the current embedded URL when present", () => {
+    const result = embeddedPricingActionPath(
+      new Request(
+        "https://estimated-delivery.bluepeaks.top/app/pricing?embedded=1&shop=smart-bundle-upsell.myshopify.com&host=current-host",
+      ),
+      "smart-bundle-upsell.myshopify.com",
+    );
+
+    expect(result).toBe(
+      "/app/pricing?shop=smart-bundle-upsell.myshopify.com&host=current-host&embedded=1",
+    );
   });
 });

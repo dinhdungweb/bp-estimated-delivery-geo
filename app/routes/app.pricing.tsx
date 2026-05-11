@@ -19,6 +19,7 @@ import {
   type PlanHandle,
 } from "../lib/pricing";
 import {
+  embeddedPricingActionPath,
   getCurrentPlan,
   isBillingTestMode,
   pricingReturnUrl,
@@ -38,6 +39,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
   const url = new URL(request.url);
   const currentPlan = await syncCurrentPlanForShop(session.shop, billing);
+  const pricingAction = embeddedPricingActionPath(request, session.shop);
   const [totalRules, activeRules, savedDesigns] = await Promise.all([
     prisma.deliveryRule.count({ where: { shop: session.shop } }),
     prisma.deliveryRule.count({ where: { shop: session.shop, isActive: true } }),
@@ -63,6 +65,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     billingCancelled: url.searchParams.get("billing") === "cancelled",
     upgradeReason: url.searchParams.get("upgrade") || "",
     isTestMode: isBillingTestMode(),
+    pricingAction,
   });
 };
 
@@ -91,7 +94,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       update: { planHandle: "free", planSubscriptionId: null, planSyncedAt: new Date() },
       create: { shop: session.shop, isEnabled: true, widgetStyle: "modern", planHandle: "free", planSyncedAt: new Date() },
     });
-    return redirect("/app/pricing?billing=cancelled");
+    return redirect(pricingReturnUrl(request, "billing=cancelled"));
   }
 
   const plan = PRICING_PLANS[planHandle];
@@ -122,6 +125,7 @@ export default function PricingPage() {
     billingCancelled,
     upgradeReason,
     isTestMode,
+    pricingAction,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData() as ActionResult | undefined;
   const [noticeDismissed, setNoticeDismissed] = useState(false);
@@ -256,7 +260,7 @@ export default function PricingPage() {
                   ))}
                 </ul>
 
-                <Form method="post" reloadDocument>
+                <Form method="post" action={pricingAction} reloadDocument>
                   <input type="hidden" name="intent" value="select-plan" />
                   <input type="hidden" name="plan" value={plan.handle} />
                   <button

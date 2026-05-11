@@ -155,12 +155,37 @@ export async function syncCurrentPlanForShop(
   return currentPlan;
 }
 
+export function shopHandleFromShopDomain(shop: string) {
+  return shop.replace(/\.myshopify\.com$/i, "").trim();
+}
+
+export function adminHostParamForShop(shop: string) {
+  const storeHandle = shopHandleFromShopDomain(shop);
+  if (!storeHandle) return "";
+
+  return Buffer.from(`admin.shopify.com/store/${storeHandle}`)
+    .toString("base64")
+    .replace(/=+$/, "");
+}
+
+export function embeddedPricingActionPath(request: Request, shop: string) {
+  const requestUrl = new URL(request.url);
+  const params = new URLSearchParams();
+  const host = requestUrl.searchParams.get("host") || adminHostParamForShop(shop);
+
+  params.set("shop", shop);
+  if (host) params.set("host", host);
+  params.set("embedded", requestUrl.searchParams.get("embedded") || "1");
+
+  return `/app/pricing?${params.toString()}`;
+}
+
 export function pricingReturnUrl(request: Request, search = "billing=success") {
   const appUrl = process.env.SHOPIFY_APP_URL || request.url;
   const requestUrl = new URL(request.url);
   const adminAppHandle = (process.env.SHOPIFY_ADMIN_APP_HANDLE || "").trim();
   const shop = requestUrl.searchParams.get("shop") || "";
-  const storeHandle = shop.replace(/\.myshopify\.com$/i, "").trim();
+  const storeHandle = shopHandleFromShopDomain(shop);
   const url =
     adminAppHandle && storeHandle
       ? new URL(
