@@ -278,6 +278,7 @@ describe("storefront embed sanitization", () => {
     window.localStorage.clear();
     vi.restoreAllMocks();
     delete (window as Window & { __bpDeliveryLoaded?: boolean }).__bpDeliveryLoaded;
+    delete (window as Window & { Shopify?: unknown }).Shopify;
   });
 
   afterEach(() => {
@@ -555,6 +556,75 @@ describe("storefront embed sanitization", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain("inventory_status=out_of_stock_continue");
+  });
+
+  it("detects the visitor country from Shopify browsing context before requesting delivery rules", async () => {
+    document.body.innerHTML = `
+      <div id="bp-delivery-block-content" data-shop="shop.myshopify.com" data-product-id="1" data-product-tags="" style="display:none">
+        <div class="bp-skeleton"></div>
+      </div>
+    `;
+    (window as Window & { Shopify?: unknown }).Shopify = {
+      country: "VN",
+      routes: { root: "/" },
+    };
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).startsWith("/browsing_context_suggestions.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            detected_values: {
+              country: { handle: "GB", name: "United Kingdom" },
+            },
+          }),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          enabled: true,
+          countryCode: "GB",
+          orderDate: "Jan 1",
+          shipDate: "Jan 2",
+          minDate: "Jan 3",
+          maxDate: "Jan 4",
+          shippingMessage: "Arrives {min_date} - {max_date}",
+          settings: {
+            showLocationSelector: true,
+            customBlocks: [
+              {
+                id: "header",
+                type: "header",
+                settings: { text: "Arrives {min_date} - {max_date}" },
+              },
+            ],
+          },
+        }),
+      });
+    });
+    (window as unknown as { fetch: typeof fetch }).fetch = fetchMock;
+
+    const script = fs.readFileSync(
+      path.join(process.cwd(), "extensions/bp-estimated-delivery/assets/bp-delivery-embed.js"),
+      "utf8",
+    );
+    window.eval(script);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const browsingCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).startsWith("/browsing_context_suggestions.json"),
+    );
+    const deliveryCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).startsWith("/apps/bp-delivery?"),
+    );
+    expect(browsingCalls).toHaveLength(1);
+    expect(deliveryCalls).toHaveLength(1);
+    expect(String(deliveryCalls[0][0])).toContain("country=GB");
+    expect(document.querySelector(".bp-change-link")?.textContent).toContain("United Kingdom");
+    expect(window.localStorage.getItem("bpDeliveryCountry")).toBeNull();
   });
 
   it("uses the selected shipping country when the location modal is saved", async () => {

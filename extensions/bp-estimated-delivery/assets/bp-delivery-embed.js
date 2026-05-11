@@ -184,6 +184,8 @@
   var SHADOWS = { none: true, sm: true, md: true, lg: true, xl: true, premium: true };
   var ICON_PATH = /^\/icons\/(?:delivery|ordered|shipped)\/[a-z0-9-]+\.png$/i;
   var COUNTRY_STORAGE_KEY = "bpDeliveryCountry";
+  var detectedCountryPromise = null;
+  var lastDetectedCountry = "";
   var FLAG_CDN_BASE = "https://flagcdn.com/";
   var DEFAULT_LOCATION_PREFIX_TEXT = "Delivery to";
   var DEFAULT_LOCATION_ROW_ALIGNMENT = "right";
@@ -518,6 +520,73 @@
     } catch (_error) {
       return "";
     }
+  }
+
+  function shopifyRoutesRoot() {
+    var shopify = window.Shopify || {};
+    var routes = shopify.routes || {};
+    var root = text(routes.root || "");
+    if (!root) return "";
+    return root.charAt(root.length - 1) === "/" ? root : root + "/";
+  }
+
+  function detectedCountryFromBrowsingContext(payload) {
+    var detected = payload && payload.detected_values && payload.detected_values.country;
+    var detectedCountry = normalizeCountry(detected && (detected.handle || detected.iso_code || detected.code));
+    if (detectedCountry) return detectedCountry;
+
+    var suggestions = Array.isArray(payload && payload.suggestions) ? payload.suggestions : [];
+    for (var i = 0; i < suggestions.length; i += 1) {
+      var suggestionCountry = suggestions[i] && suggestions[i].parts && suggestions[i].parts.country;
+      var suggestionCode = normalizeCountry(
+        suggestionCountry && (suggestionCountry.handle || suggestionCountry.iso_code || suggestionCountry.code)
+      );
+      if (suggestionCode) return suggestionCode;
+    }
+
+    return "";
+  }
+
+  function fetchBrowsingContextCountry(url) {
+    var timeoutId = null;
+    var options = { credentials: "same-origin" };
+    if (typeof window.AbortController === "function") {
+      var controller = new window.AbortController();
+      options.signal = controller.signal;
+      timeoutId = window.setTimeout(function () { controller.abort(); }, 1200);
+    }
+
+    return fetch(url, options)
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(detectedCountryFromBrowsingContext)
+      .catch(function () { return ""; })
+      .then(function (country) {
+        if (timeoutId) window.clearTimeout(timeoutId);
+        return country;
+      });
+  }
+
+  function detectCountryFromShopify() {
+    if (lastDetectedCountry) return Promise.resolve(lastDetectedCountry);
+    if (detectedCountryPromise) return detectedCountryPromise;
+
+    var root = shopifyRoutesRoot();
+    if (!root) return Promise.resolve("");
+
+    detectedCountryPromise = fetchBrowsingContextCountry(
+      root + "browsing_context_suggestions.json?country[enabled]=true"
+    ).then(function (country) {
+      lastDetectedCountry = country || "";
+      return lastDetectedCountry;
+    });
+
+    return detectedCountryPromise;
+  }
+
+  function resolveRequestCountry() {
+    var manualCountry = savedCountry();
+    if (manualCountry) return Promise.resolve(manualCountry);
+    return detectCountryFromShopify();
   }
 
   function storeCountry(country) {
@@ -1618,38 +1687,43 @@
   }
 
   function runWidgetFlow(shop, productId, productTags, content, skeleton) {
-    var country = savedCountry();
     var productCollections = content.getAttribute("data-product-collections") || "";
     var inventoryStatus = content.getAttribute("data-inventory-status") || "";
-    var params = new URLSearchParams({
-      shop: text(shop),
-      product_id: text(productId),
-      tags: text(productTags),
-      collections: text(productCollections),
-      inventory_status: text(inventoryStatus)
-    });
-    if (country) params.set("country", country);
-
-    fetch("/apps/bp-delivery?" + params.toString(), { credentials: "same-origin" })
-      .then(function (response) { return response.json(); })
-      .then(function (payload) {
-        var payloadCountry = normalizeCountry(payload && payload.countryCode);
-        if (payloadCountry) {
-          lastResolvedCountry = payloadCountry;
-          fillCountrySelect(document.getElementById("bp-delivery-embed-country-select"), payloadCountry);
-        }
-        if (!payload.enabled) {
-          hideSkeleton(skeleton);
-          return;
-        }
-        hideSkeleton(skeleton);
-        content.style.display = "block";
-        renderWidget(payload, content);
-        startTimer(payload.countdownSeconds);
-      })
-      .catch(function () {
-        hideSkeleton(skeleton);
+    var requestDelivery = function (country) {
+      var params = new URLSearchParams({
+        shop: text(shop),
+        product_id: text(productId),
+        tags: text(productTags),
+        collections: text(productCollections),
+        inventory_status: text(inventoryStatus)
       });
+      if (country) params.set("country", country);
+
+      fetch("/apps/bp-delivery?" + params.toString(), { credentials: "same-origin" })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+          var payloadCountry = normalizeCountry(payload && payload.countryCode);
+          if (payloadCountry) {
+            lastResolvedCountry = payloadCountry;
+            fillCountrySelect(document.getElementById("bp-delivery-embed-country-select"), payloadCountry);
+          }
+          if (!payload.enabled) {
+            hideSkeleton(skeleton);
+            return;
+          }
+          hideSkeleton(skeleton);
+          content.style.display = "block";
+          renderWidget(payload, content);
+          startTimer(payload.countdownSeconds);
+        })
+        .catch(function () {
+          hideSkeleton(skeleton);
+        });
+    };
+
+    resolveRequestCountry()
+      .then(requestDelivery)
+      .catch(function () { requestDelivery(""); });
   }
 
   function init() {
