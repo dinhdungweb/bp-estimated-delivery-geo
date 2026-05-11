@@ -106,10 +106,9 @@ export const PRICING_PLANS: Record<PlanHandle, PricingPlan> = {
     description: "For stores that need product and country-specific ETA rules.",
     monthlyPrice: 7.99,
     billingPlan: "Growth",
-    recommended: true,
     limits: {
       activeRules: 5,
-      savedDesigns: 5,
+      savedDesigns: null,
       analyticsDays: 14,
       advancedAnalytics: false,
       shopifyMarkets: false,
@@ -119,7 +118,7 @@ export const PRICING_PLANS: Record<PlanHandle, PricingPlan> = {
     },
     features: [
       "5 active delivery rules",
-      "5 saved My Designs",
+      "Unlimited My Designs",
       "Countdown, banner, promise, progress, badges, accordion, and dual info components",
       "Product, collection, tag, country, and inventory targeting",
       "Cut-off time and holiday logic",
@@ -131,6 +130,7 @@ export const PRICING_PLANS: Record<PlanHandle, PricingPlan> = {
     description: "For multi-market stores that need deeper reporting and Studio control.",
     monthlyPrice: 14.99,
     billingPlan: "Pro",
+    recommended: true,
     limits: {
       activeRules: 50,
       savedDesigns: null,
