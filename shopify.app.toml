@@ -1,0 +1,25 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "fdf944db46b40d63062eb6d9b5abe80c"
+name = "BP: Estimated Delivery & Geo"
+application_url = "https://estimated-delivery.bluepeaks.top"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+include_config_on_deploy = true
+
+[webhooks]
+api_version = "2026-07"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,read_orders,read_products,read_themes,read_markets"
+
+[auth]
+redirect_urls = [ "https://estimated-delivery.bluepeaks.top/api/auth" ]
+
+[app_proxy]
+url = "https://estimated-delivery.bluepeaks.top/apps/bp-delivery"
+subpath = "bp-delivery"
+prefix = "apps"
