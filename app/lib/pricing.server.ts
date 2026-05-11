@@ -183,7 +183,7 @@ export function embeddedPricingActionPath(request: Request, shop: string) {
 export function pricingReturnUrl(request: Request, search = "billing=success") {
   const appUrl = process.env.SHOPIFY_APP_URL || request.url;
   const requestUrl = new URL(request.url);
-  const adminAppHandle = (process.env.SHOPIFY_ADMIN_APP_HANDLE || "").trim();
+  const adminAppHandle = (process.env.SHOPIFY_ADMIN_APP_HANDLE || "bp-estimated-delivery-geo-2").trim();
   const shop = requestUrl.searchParams.get("shop") || "";
   const storeHandle = shopHandleFromShopDomain(shop);
   const url =

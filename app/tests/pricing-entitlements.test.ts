@@ -127,6 +127,7 @@ describe("pricing return URL", () => {
     const previousAppUrl = process.env.SHOPIFY_APP_URL;
     const previousAdminHandle = process.env.SHOPIFY_ADMIN_APP_HANDLE;
     process.env.SHOPIFY_APP_URL = "https://estimated-delivery.bluepeaks.top";
+    process.env.SHOPIFY_ADMIN_APP_HANDLE = "";
 
     try {
       const result = pricingReturnUrl(
@@ -136,7 +137,7 @@ describe("pricing return URL", () => {
       );
 
       expect(result).toBe(
-        "https://estimated-delivery.bluepeaks.top/app/pricing?shop=bp-estimated-delivery-geo.myshopify.com&host=abc123&embedded=1&billing=success",
+        "https://admin.shopify.com/store/bp-estimated-delivery-geo/apps/bp-estimated-delivery-geo-2/app/pricing?shop=bp-estimated-delivery-geo.myshopify.com&host=abc123&embedded=1&billing=success",
       );
     } finally {
       if (previousAdminHandle === undefined) {
@@ -168,6 +169,37 @@ describe("pricing return URL", () => {
 
       expect(result).toBe(
         "https://admin.shopify.com/store/bp-estimated-delivery-geo/apps/bp-estimated-delivery-geo-2/app/pricing?shop=bp-estimated-delivery-geo.myshopify.com&host=abc123&embedded=1&billing=success",
+      );
+    } finally {
+      if (previousAdminHandle === undefined) {
+        delete process.env.SHOPIFY_ADMIN_APP_HANDLE;
+      } else {
+        process.env.SHOPIFY_ADMIN_APP_HANDLE = previousAdminHandle;
+      }
+
+      if (previousAppUrl === undefined) {
+        delete process.env.SHOPIFY_APP_URL;
+      } else {
+        process.env.SHOPIFY_APP_URL = previousAppUrl;
+      }
+    }
+  });
+
+  it("defaults billing approval return URLs to this app's Shopify Admin handle", () => {
+    const previousAppUrl = process.env.SHOPIFY_APP_URL;
+    const previousAdminHandle = process.env.SHOPIFY_ADMIN_APP_HANDLE;
+    process.env.SHOPIFY_APP_URL = "https://estimated-delivery.bluepeaks.top";
+    delete process.env.SHOPIFY_ADMIN_APP_HANDLE;
+
+    try {
+      const result = pricingReturnUrl(
+        new Request(
+          "https://estimated-delivery.bluepeaks.top/app/pricing?embedded=1&shop=smart-bundle-upsell.myshopify.com&host=abc123",
+        ),
+      );
+
+      expect(result).toBe(
+        "https://admin.shopify.com/store/smart-bundle-upsell/apps/bp-estimated-delivery-geo-2/app/pricing?shop=smart-bundle-upsell.myshopify.com&host=abc123&embedded=1&billing=success",
       );
     } finally {
       if (previousAdminHandle === undefined) {
