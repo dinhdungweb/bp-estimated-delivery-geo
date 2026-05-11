@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
-  Form,
   data,
   redirect,
   useActionData,
@@ -29,6 +28,12 @@ import { authenticate } from "../shopify.server";
 
 type ActionResult = {
   error?: string;
+};
+
+type ShopifyGlobal = typeof globalThis & {
+  shopify?: {
+    idToken?: () => Promise<string>;
+  };
 };
 
 function isPlanHandle(value: string): value is PlanHandle {
@@ -128,6 +133,8 @@ export default function PricingPage() {
     pricingAction,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData() as ActionResult | undefined;
+  const [clientError, setClientError] = useState("");
+  const [submittingPlan, setSubmittingPlan] = useState("");
   const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const currentRank = planRank(currentPlan.plan.handle);
@@ -150,6 +157,47 @@ export default function PricingPage() {
     setNoticeDismissed(false);
   }, [billingCancelled, billingSuccess, upgradeReason]);
 
+  const requestPlan = async (planHandle: PlanHandle) => {
+    setClientError("");
+    setSubmittingPlan(planHandle);
+
+    try {
+      const token = await (globalThis as ShopifyGlobal).shopify?.idToken?.();
+      const formData = new FormData();
+      formData.set("intent", "select-plan");
+      formData.set("plan", planHandle);
+
+      const response = await fetch(pricingAction, {
+        method: "POST",
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        redirect: "manual",
+      });
+
+      const billingUrl = response.headers.get("X-Shopify-API-Request-Failure-Reauthorize-Url");
+      if (billingUrl) {
+        window.open(billingUrl, "_top");
+        return;
+      }
+
+      if (response.type === "opaqueredirect" || response.status >= 300 && response.status < 400) {
+        window.location.assign(pricingAction);
+        return;
+      }
+
+      if (!response.ok) {
+        setClientError("Could not open Shopify billing. Refresh the app and try again.");
+        return;
+      }
+
+      window.location.assign(pricingAction);
+    } catch {
+      setClientError("Could not open Shopify billing. Refresh the app and try again.");
+    } finally {
+      setSubmittingPlan("");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#f6f6f7] p-4 font-sans md:p-6">
       <div className="mx-auto max-w-6xl space-y-5">
@@ -169,9 +217,9 @@ export default function PricingPage() {
           </div>
         </div>
 
-        {actionData?.error && (
+        {(actionData?.error || clientError) && (
           <Banner title="Pricing action failed" tone="critical">
-            <p>{actionData.error}</p>
+            <p>{actionData?.error || clientError}</p>
           </Banner>
         )}
 
@@ -198,6 +246,7 @@ export default function PricingPage() {
           {plans.map((plan) => {
             const isCurrent = plan.handle === currentPlan.plan.handle;
             const isDowngrade = planRank(plan.handle) < currentRank;
+            const isBusy = submittingPlan === plan.handle;
             const activeRuleUsage = `${usage.activeRules} / ${limitLabel(plan.limits.activeRules)}`;
             const savedDesignUsage = `${usage.savedDesigns} / ${limitLabel(plan.limits.savedDesigns)}`;
 
@@ -260,23 +309,22 @@ export default function PricingPage() {
                   ))}
                 </ul>
 
-                <Form method="post" action={pricingAction} reloadDocument>
-                  <input type="hidden" name="intent" value="select-plan" />
-                  <input type="hidden" name="plan" value={plan.handle} />
-                  <button
-                    type="submit"
-                    disabled={isCurrent}
-                    className={`w-full ${plan.recommended || isAtLeastPlan(plan.handle, "pro") ? BUTTON_PRIMARY : BUTTON_SECONDARY}`}
-                  >
-                    {isCurrent
+                <button
+                  type="button"
+                  onClick={() => requestPlan(plan.handle)}
+                  disabled={isCurrent || Boolean(submittingPlan)}
+                  className={`w-full ${plan.recommended || isAtLeastPlan(plan.handle, "pro") ? BUTTON_PRIMARY : BUTTON_SECONDARY}`}
+                >
+                  {isBusy
+                    ? "Opening Shopify billing..."
+                    : isCurrent
                       ? "Current plan"
                       : plan.handle === "free"
                         ? "Downgrade to Free"
                         : isDowngrade
                           ? `Switch to ${plan.name}`
                           : `Upgrade to ${plan.name}`}
-                  </button>
-                </Form>
+                </button>
               </article>
             );
           })}
