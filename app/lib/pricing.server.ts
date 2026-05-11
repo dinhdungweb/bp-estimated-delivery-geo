@@ -158,7 +158,16 @@ export async function syncCurrentPlanForShop(
 export function pricingReturnUrl(request: Request, search = "billing=success") {
   const appUrl = process.env.SHOPIFY_APP_URL || request.url;
   const requestUrl = new URL(request.url);
-  const url = new URL("/app/pricing", appUrl);
+  const adminAppHandle = (process.env.SHOPIFY_ADMIN_APP_HANDLE || "").trim();
+  const shop = requestUrl.searchParams.get("shop") || "";
+  const storeHandle = shop.replace(/\.myshopify\.com$/i, "").trim();
+  const url =
+    adminAppHandle && storeHandle
+      ? new URL(
+          `/store/${encodeURIComponent(storeHandle)}/apps/${encodeURIComponent(adminAppHandle)}/app/pricing`,
+          "https://admin.shopify.com",
+        )
+      : new URL("/app/pricing", appUrl);
 
   ["shop", "host", "embedded"].forEach((key) => {
     const value = requestUrl.searchParams.get(key);
