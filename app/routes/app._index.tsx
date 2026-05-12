@@ -245,7 +245,7 @@ export default function DashboardHome() {
       desc: "To start using the app, please enable app embedding by following the steps below.",
       instructions: [
         'Click "Enable embed app" below.',
-        'Find and enable "BP: Estimated Delivery Pro" in the theme customizer.',
+        'Find and enable "Estimated Delivery Pro" in the theme customizer.',
         'Click "Save", then return here and refresh the app page.'
       ],
       buttonText: themeEmbedStatus === "enabled" ? "Review theme" : "Enable embed app",
