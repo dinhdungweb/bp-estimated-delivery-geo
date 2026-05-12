@@ -1,5 +1,5 @@
 /**
- * BP: Estimated Delivery & Geo - Widget Template Gallery
+ * BP: Estimated Delivery Pro - Widget Template Gallery
  * Copyright (c) 2025 BluePeaks. All rights reserved.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";

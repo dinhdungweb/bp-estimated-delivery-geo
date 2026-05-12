@@ -1,5 +1,5 @@
 /**
- * BP: Estimated Delivery & Geo - storefront rendering engine.
+ * BP: Estimated Delivery Pro - storefront rendering engine.
  * Merchant-controlled content is rendered with DOM APIs so text never becomes
  * executable HTML.
  */

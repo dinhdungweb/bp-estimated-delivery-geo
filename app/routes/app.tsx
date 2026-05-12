@@ -1,5 +1,5 @@
 /**
- * BP: Estimated Delivery & Geo — App Shell & Navigation
+ * BP: Estimated Delivery Pro — App Shell & Navigation
  * Copyright © 2025 BluePeaks. All rights reserved.
  * https://bluepeaks.top
  *

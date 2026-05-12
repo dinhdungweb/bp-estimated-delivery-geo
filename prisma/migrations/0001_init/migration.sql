@@ -1,4 +1,4 @@
--- BP: Estimated Delivery & Geo — Baseline Migration
+-- BP: Estimated Delivery Pro — Baseline Migration
 -- Copyright © 2025 BluePeaks. All rights reserved.
 -- This migration is a baseline for the existing PostgreSQL database created via prisma db push.
 

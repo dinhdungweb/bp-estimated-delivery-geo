@@ -1,5 +1,5 @@
 /**
- * BP: Estimated Delivery & Geo - Delivery Rule Editor
+ * BP: Estimated Delivery Pro - Delivery Rule Editor
  * Copyright (c) 2025 BluePeaks. All rights reserved.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
@@ -2412,7 +2412,7 @@ export default function RuleEditorPage() {
               <div className="space-y-4 p-6">
                 <div className="rounded-xl border border-green-100 bg-green-50 p-4">
                   <p className="text-[11px] font-medium leading-relaxed text-green-800">
-                    <b>Tip:</b> After opening the editor, add the <b>"BP: Estimated Delivery"</b> block to your Product template.
+                    <b>Tip:</b> After opening the editor, add the <b>"BP: Estimated Delivery Pro"</b> block to your Product template.
                   </p>
                 </div>
                 <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">

@@ -1,5 +1,5 @@
 /**
- * BP: Estimated Delivery & Geo — Analytics Dashboard
+ * BP: Estimated Delivery Pro — Analytics Dashboard
  * Copyright © 2025 BluePeaks. All rights reserved.
  * https://bluepeaks.top
  *

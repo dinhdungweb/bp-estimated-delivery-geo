@@ -1,5 +1,5 @@
 /**
- * BP: Estimated Delivery & Geo - Delivery Rules Manager
+ * BP: Estimated Delivery Pro - Delivery Rules Manager
  * Copyright (c) 2025 BluePeaks. All rights reserved.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
