@@ -54,6 +54,11 @@ export type {
 const hasTimelineConnector = (preset: string) => preset === "timeline_dots";
 const hasVerticalConnector = (preset: string) => preset === "vertical";
 
+const resolveOrnamentSrc = (value: unknown) => {
+  const raw = String(value || "");
+  return raw.replace(/^\/ornaments\/(.+)\.png$/i, "/ornaments/$1.svg");
+};
+
 const hexLuminance = (color?: string) => {
   const value = color?.trim();
   if (!value || !/^#[0-9a-f]{3,8}$/i.test(value)) return null;
@@ -433,12 +438,72 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
     );
   };
 
+  const ornamentWrapperStyle = (s: any) => {
+    const placement = String(s.placement || "top-right");
+    const offsetX = scaledPx(Number(s.offsetX ?? 0)) || "0px";
+    const offsetY = scaledPx(Number(s.offsetY ?? 0)) || "0px";
+    const style: Record<string, string | number> = {
+      position: "absolute",
+      width: "auto",
+      pointerEvents: "none",
+      zIndex: Number(s.zIndex ?? 2),
+    };
+
+    switch (placement) {
+      case "top-left":
+        style.left = offsetX;
+        style.top = offsetY;
+        break;
+      case "top-center":
+        style.left = "50%";
+        style.top = offsetY;
+        style.transform = "translateX(-50%)";
+        break;
+      case "center-left":
+        style.left = offsetX;
+        style.top = "50%";
+        style.transform = "translateY(-50%)";
+        break;
+      case "center":
+        style.left = "50%";
+        style.top = "50%";
+        style.transform = "translate(-50%, -50%)";
+        break;
+      case "center-right":
+        style.right = offsetX;
+        style.top = "50%";
+        style.transform = "translateY(-50%)";
+        break;
+      case "bottom-left":
+        style.left = offsetX;
+        style.bottom = offsetY;
+        break;
+      case "bottom-center":
+        style.left = "50%";
+        style.bottom = offsetY;
+        style.transform = "translateX(-50%)";
+        break;
+      case "bottom-right":
+        style.right = offsetX;
+        style.bottom = offsetY;
+        break;
+      default:
+        style.right = offsetX;
+        style.top = offsetY;
+        break;
+    }
+
+    return style;
+  };
+
   const render_header = (s: any) => {
     const isBannerType = s.styleType === 'title_banner';
-    const iconPosition = ['top', 'bottom', 'left', 'right'].includes(s.iconPosition)
+    const hasIcon = Boolean(s.icon);
+    const iconPosition = hasIcon && ['top', 'bottom', 'left', 'right'].includes(s.iconPosition)
       ? s.iconPosition
       : 'top';
-    const isHorizontal = iconPosition === 'left' || iconPosition === 'right';
+    const isHorizontal = hasIcon && (iconPosition === 'left' || iconPosition === 'right');
+    const mainAxisAlignment = s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center';
     const titleFontSize =
       s.titleFontSize !== undefined
         ? scaledPx(s.titleFontSize)
@@ -455,7 +520,8 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
         borderRadius: s.borderRadius !== undefined ? scaledPx(s.borderRadius) : (isBannerType ? scaledPx(8) : 0),
         color: isBannerType ? (s.textColor || '#000') : (s.textColor || 'inherit'),
         flexDirection: isHorizontal ? 'row' : 'column',
-        alignItems: s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center',
+        alignItems: mainAxisAlignment,
+        justifyContent: mainAxisAlignment,
         padding: s.padding !== undefined ? scaledPx(s.padding) : '',
         gap: s.gap !== undefined ? scaledPx(s.gap) : undefined,
         '--bp-size': scaledPx(s.iconSize || 24)
@@ -494,13 +560,18 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       <div key={s.id} className={`bp-steps ${presetClass}`} data-count={items.length} style={{ 
         '--bp-size': scaledPx(stepDotIconSize),
         '--bp-gap': scaledPx(s.itemGap || 16),
+        '--bp-item-pad': scaledPx(s.padding || 0),
       } as any}>
         {items.map((item, i) => {
-          const isFirst = i === 0;
           const isLast = i === items.length - 1;
           const dotBg = item.dotColor || accent;
           const dotIsDark = hexLuminance(dotBg) !== null && isDarkHex(dotBg);
           const stepIconColor = item.iconColor || (dotIsDark ? '#fff' : textColor || '#111827');
+          const stepIconAnimation = {
+            ...s,
+            lordiconPrimaryColor: stepIconColor,
+            lordiconSecondaryColor: stepIconColor,
+          };
           const usesItemSurface = ['boxed_cards', 'boxed_steps', 'split_segments', 'thick', 'chevron'].includes(preset);
           const stepBg = usesItemSurface ? item.bgColor || (usesDarkSurface ? 'rgba(255,255,255,0.06)' : undefined) : undefined;
           
@@ -510,7 +581,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           else if (preset === 'split_segments' || preset === 'thick' || preset === 'chevron') itemClass = 'bp-segment';
 
           const hasItemBorder = (preset === 'boxed_cards' || preset === 'boxed_steps' || preset === 'split_segments');
-          const itemBorderColor = item.borderColor || (isFirst ? accent : (usesDarkSurface ? 'rgba(148,163,184,0.35)' : '#eee'));
+          const itemBorderColor = item.borderColor || (usesDarkSurface ? 'rgba(148,163,184,0.35)' : '#eee');
           const dotBorderColor = usesItemSurface ? (item.borderColor || dotBg) : dotBg;
 
           return (
@@ -528,7 +599,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
                 borderColor: dotBorderColor,
                 borderWidth: s.dotBorderWidth !== undefined ? `${s.dotBorderWidth}px` : undefined,
               }}>
-                <IconRenderer icon={item.icon} color={stepIconColor} size={s.iconSize || (preset === 'timeline_dots' ? 16 : 22)} animation={s} />
+                <IconRenderer icon={item.icon} color={stepIconColor} size={s.iconSize || (preset === 'timeline_dots' ? 16 : 22)} animation={stepIconAnimation} />
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: scaledPx(2), textAlign: preset === 'vertical' ? 'left' : 'center' }}>
@@ -746,6 +817,23 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
           />
         </div>
       ) : null; break;
+      case 'ornament': content = block.settings.url ? (
+        <div key={block.id} className="bp-ornament" style={ornamentWrapperStyle(block.settings) as any}>
+          <img
+            src={resolveOrnamentSrc(block.settings.url)}
+            alt=""
+            style={{
+              display: "block",
+              width: scaledCssSize(block.settings.width, "72px"),
+              height: scaledCssSize(block.settings.height, "auto"),
+              objectFit: "contain",
+              opacity: block.settings.opacity !== undefined ? Number(block.settings.opacity) / 100 : undefined,
+              transform: block.settings.rotation !== undefined ? `rotate(${Number(block.settings.rotation) || 0}deg)` : undefined,
+              transformOrigin: "center center",
+            }}
+          />
+        </div>
+      ) : null; break;
       case 'html': content = (
         <pre key={block.id} className="bp-text-sub" style={{ whiteSpace: "pre-wrap", margin: 0 }}>
           {String(block.settings.code || "")}
@@ -753,7 +841,7 @@ export function WidgetPreviewRenderer({ settings }: { settings: WidgetSettingsPr
       ); break;
       default: content = null;
     }
-    return wrapBlock(block, content);
+    return block.type === 'ornament' ? content : wrapBlock(block, content);
   };
 
   return (

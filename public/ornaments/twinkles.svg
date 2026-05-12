@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 44" role="img" aria-label="Gold twinkles">
+  <g fill="#d7a856">
+    <path d="M28 4l3.8 10 10.2 3.8-10.2 3.9L28 32l-3.8-10.3L14 17.8 24.2 14z"/>
+    <path d="M83 9l2.5 6.5 6.5 2.5-6.5 2.5L83 27l-2.5-6.5L74 18l6.5-2.5z"/>
+    <path d="M109 2l1.8 4.7 4.8 1.8-4.8 1.8-1.8 4.7-1.8-4.7-4.8-1.8 4.8-1.8z"/>
+    <circle cx="56" cy="14" r="2"/>
+    <circle cx="66" cy="30" r="1.8"/>
+    <circle cx="9" cy="28" r="1.6"/>
+    <circle cx="119" cy="31" r="1.6"/>
+  </g>
+</svg>

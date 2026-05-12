@@ -74,6 +74,7 @@ import {
 } from "../lib/widgetStyleSamples";
 import type { TemplatePalette } from "../lib/widgetStyleSamples";
 import { getAnimatedIconByIconId } from "../lib/lordiconPresets";
+import { ORNAMENT_ASSETS, ORNAMENT_ASSET_OPTIONS } from "../lib/ornamentAssets";
 import Chrome from '@uiw/react-color-chrome';
 import { createPortal } from "react-dom";
 
@@ -322,6 +323,7 @@ const blockLabels: Record<string, string> = {
   policy_accordion: "Policy Accordion",
   progress: "Progress Bar",
   image: "Image",
+  ornament: "Ornament",
   spacer: "Spacer",
   divider: "Divider",
   dual_info: "Dual Info",
@@ -353,6 +355,12 @@ const getBlockLabel = (type: string) =>
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+
+const normalizeOrnamentUrl = (url?: string) =>
+  String(url || "").replace(/^\/ornaments\/(.+)\.png$/i, "/ornaments/$1.svg");
+
+const ornamentPresetValue = (url?: string) =>
+  Object.entries(ORNAMENT_ASSETS).find(([, assetUrl]) => assetUrl === normalizeOrnamentUrl(url))?.[0] || "custom";
 
 function safeReturnTo(value: string | null) {
   if (!value) return "/app/templates?tab=my-design";
@@ -727,6 +735,17 @@ export default function VisualBuilderStudio() {
       defaultSettings.url = "/sample-product.png";
       defaultSettings.align = "center";
       defaultSettings.height = "120px";
+    }
+    if (type === 'ornament') {
+      defaultSettings.url = ORNAMENT_ASSETS.twinkles;
+      defaultSettings.placement = "top-right";
+      defaultSettings.width = "72px";
+      defaultSettings.height = "auto";
+      defaultSettings.offsetX = 8;
+      defaultSettings.offsetY = 8;
+      defaultSettings.rotation = 0;
+      defaultSettings.opacity = 100;
+      defaultSettings.zIndex = 2;
     }
     if (type === 'divider') {
       defaultSettings.height = 1;
@@ -1643,6 +1662,54 @@ export default function VisualBuilderStudio() {
            </BlockStack>
         )}
 
+        {type === 'ornament' && (
+          <BlockStack gap="300">
+            <InspectorSection title="Source" defaultOpen>
+              <Select
+                label="Preset Asset"
+                options={[
+                  { label: "Custom URL", value: "custom" },
+                  ...ORNAMENT_ASSET_OPTIONS,
+                ]}
+                value={ornamentPresetValue(s.url)}
+                onChange={(value) =>
+                  updateBlockSettings(id, {
+                    url: value === "custom" ? (s.url || "") : ORNAMENT_ASSETS[value as keyof typeof ORNAMENT_ASSETS],
+                  })
+                }
+              />
+              <TextField label="Image URL" value={s.url || ""} onChange={(v) => updateBlockSettings(id, { url: v })} autoComplete="off" multiline={2} />
+            </InspectorSection>
+            <InspectorSection title="Placement">
+              <Select
+                label="Placement"
+                options={[
+                  { label: "Top left", value: "top-left" },
+                  { label: "Top center", value: "top-center" },
+                  { label: "Top right", value: "top-right" },
+                  { label: "Center left", value: "center-left" },
+                  { label: "Center", value: "center" },
+                  { label: "Center right", value: "center-right" },
+                  { label: "Bottom left", value: "bottom-left" },
+                  { label: "Bottom center", value: "bottom-center" },
+                  { label: "Bottom right", value: "bottom-right" },
+                ]}
+                value={s.placement || "top-right"}
+                onChange={(v) => updateBlockSettings(id, { placement: v })}
+              />
+              <RangeSlider label="Offset X" min={-40} max={80} value={Number(s.offsetX ?? 0)} onChange={(v) => updateBlockSettings(id, { offsetX: Number(v) })} output />
+              <RangeSlider label="Offset Y" min={-40} max={80} value={Number(s.offsetY ?? 0)} onChange={(v) => updateBlockSettings(id, { offsetY: Number(v) })} output />
+              <RangeSlider label="Rotation" min={-180} max={180} value={Number(s.rotation ?? 0)} onChange={(v) => updateBlockSettings(id, { rotation: Number(v) })} output />
+              <RangeSlider label="Layer Order" min={0} max={10} value={Number(s.zIndex ?? 2)} onChange={(v) => updateBlockSettings(id, { zIndex: Number(v) })} output />
+            </InspectorSection>
+            <InspectorSection title="Size & appearance">
+              <TextField label="Width (px/%/auto)" value={s.width || "72px"} onChange={(v) => updateBlockSettings(id, { width: v })} autoComplete="off" />
+              <TextField label="Height (px/auto)" value={s.height || "auto"} onChange={(v) => updateBlockSettings(id, { height: v })} autoComplete="off" />
+              <RangeSlider label="Opacity" min={10} max={100} value={Number(s.opacity ?? 100)} onChange={(v) => updateBlockSettings(id, { opacity: Number(v) })} output />
+            </InspectorSection>
+          </BlockStack>
+        )}
+
         {type === 'divider' && (
            <BlockStack gap="300">
               <RangeSlider label="Height" min={1} max={10} value={s.height || 1} onChange={(v) => updateBlockSettings(id, { height: v })} output />
@@ -1866,7 +1933,7 @@ export default function VisualBuilderStudio() {
                 <Divider />
                 <Text variant="bodySm" fontWeight="bold" tone="subdued" as="p">ADD COMPONENTS</Text>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                   {['header', 'promise_card', 'steps', 'timer', 'banner', 'trust_badges', 'policy_accordion', 'progress', 'image', 'spacer', 'divider', 'dual_info'].map(t => {
+                   {['header', 'promise_card', 'steps', 'timer', 'banner', 'trust_badges', 'policy_accordion', 'progress', 'image', 'ornament', 'spacer', 'divider', 'dual_info'].map(t => {
                      const requiredPlan = getRequiredPlanForBlock({ id: "option", type: t as BlockType, settings: {} });
                      const locked = editorLocked || !isAtLeastPlan(currentPlan.plan.handle, requiredPlan);
                      const blockLabel = getBlockLabel(t);
@@ -1972,6 +2039,7 @@ export default function VisualBuilderStudio() {
                    <ColorField label="Text Color" value={textColor} onChange={setTextColor} />
                    <ColorField label="Icon Accent" value={iconColor} onChange={setIconColor} />
                    <ColorField label="Background Fill" value={bgColor} onChange={setBgColor} />
+                   <ColorField label="Border Color" value={borderColor} onChange={setBorderColor} />
                    <TextField label="Custom Gradient" value={bgGradient} onChange={setBgGradient} autoComplete="off" placeholder="linear-gradient(...)" />
                 </BlockStack>
               </BlockStack>

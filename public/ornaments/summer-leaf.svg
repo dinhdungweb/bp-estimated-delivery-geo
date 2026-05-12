@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 104" role="img" aria-label="Tropical leaves">
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 88C31 48 59 24 103 11" stroke="#39a876" stroke-width="5"/>
+    <path d="M27 68c5-21 16-35 35-45M36 59c10-19 24-32 44-40M46 51c15-15 31-25 53-31M58 45c17-10 31-15 51-16M69 39c17-5 30-6 43-2" stroke="#77c79b" stroke-width="4"/>
+    <path d="M18 84c19-8 35-12 54-11M25 72c19 0 36 4 52 12M36 60c18 4 33 12 46 25M50 49c16 7 29 18 39 32M65 39c13 8 22 19 28 33" stroke="#2f8e68" stroke-width="3"/>
+    <path d="M12 43c17-20 37-29 63-28" stroke="#65bf90" stroke-width="4" opacity=".75"/>
+    <path d="M21 37c10-7 21-11 35-13M30 31c13-2 25-1 38 3" stroke="#8dd3aa" stroke-width="3" opacity=".75"/>
+  </g>
+</svg>

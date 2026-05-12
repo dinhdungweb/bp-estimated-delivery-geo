@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 96" role="img" aria-label="Holiday pine branch">
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 21c28 4 55 18 84 49" stroke="#6c8f6a" stroke-width="4"/>
+    <path d="M20 24c9-9 16-13 25-17M25 29c13-5 25-7 36-7M33 35c14-2 27 1 39 6M42 44c13 1 25 6 37 14M55 55c11 4 21 11 31 21" stroke="#567d59" stroke-width="3"/>
+    <path d="M18 18c11 2 22 7 33 14M26 14c9 6 18 13 27 23M41 19c6 8 12 17 17 27M57 27c7 7 13 15 18 25M72 41c8 6 15 13 21 21" stroke="#86a981" stroke-width="2.4"/>
+  </g>
+  <g fill="#c84a45">
+    <circle cx="50" cy="17" r="4"/>
+    <circle cx="62" cy="25" r="3.5"/>
+    <circle cx="75" cy="34" r="3.5"/>
+    <circle cx="88" cy="49" r="3"/>
+  </g>
+  <g fill="#d7a856">
+    <path d="M101 18l2.8 7.1 7.4 2.8-7.4 2.8-2.8 7.1-2.8-7.1-7.4-2.8 7.4-2.8z"/>
+    <circle cx="112" cy="54" r="2"/>
+    <circle cx="26" cy="48" r="1.8"/>
+  </g>
+</svg>

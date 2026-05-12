@@ -162,7 +162,8 @@
     trust_badges: true,
     divider: true,
     spacer: true,
-    image: true
+    image: true,
+    ornament: true
   };
   var STEP_PRESETS = {
     horizontal: true,
@@ -330,6 +331,26 @@
     return fallback;
   }
 
+  function hexLuminance(value) {
+    var raw = text(value).trim();
+    if (!/^#[0-9a-f]{3,8}$/i.test(raw)) return null;
+    var hex = raw.slice(1);
+    var fullHex = hex.length === 3
+      ? hex.split("").map(function (char) { return char + char; }).join("")
+      : hex.slice(0, 6);
+    if (fullHex.length !== 6) return null;
+    var channels = [0, 2, 4].map(function (offset) {
+      var channel = parseInt(fullHex.slice(offset, offset + 2), 16) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  }
+
+  function isDarkHex(value) {
+    var luminance = hexLuminance(value);
+    return luminance !== null && luminance < 0.35;
+  }
+
   function background(value, fallback) {
     var raw = text(value).trim();
     if (!raw) return fallback;
@@ -343,6 +364,9 @@
   function safeUrl(value) {
     var raw = text(value).trim();
     if (!raw) return "";
+    if (/^data:image\/(?:svg\+xml|png|jpeg|webp)(?:;[a-z0-9=:+-]+)*,/i.test(raw) && raw.length <= 24000) {
+      return raw;
+    }
     if (raw.startsWith("/") && !raw.startsWith("//")) return raw;
     try {
       var parsed = new URL(raw);
@@ -520,6 +544,15 @@
     } catch (_error) {
       return "";
     }
+  }
+
+  function resolveOrnamentUrl(value) {
+    var raw = text(value).trim();
+    var match = /^\/ornaments\/([^/?#]+)$/i.exec(raw);
+    if (match && window.__bpDeliveryOrnamentAssets && window.__bpDeliveryOrnamentAssets[match[1]]) {
+      return safeUrl(window.__bpDeliveryOrnamentAssets[match[1]]);
+    }
+    return safeUrl(raw);
   }
 
   function shopifyRoutesRoot() {
@@ -1131,8 +1164,10 @@
     var container = el("div", "bp-header" + (b.styleType === "title_banner" ? " bp-header-banner" : ""));
     var align = option(b.align, ALIGNMENTS, "center");
     var isBanner = b.styleType === "title_banner";
-    var isHorizontal = b.iconPosition === "left" || b.iconPosition === "right";
-    var iconPosition = option(b.iconPosition, { top: true, bottom: true, left: true, right: true }, "top");
+    var hasIcon = Boolean(b.icon);
+    var iconPosition = hasIcon ? option(b.iconPosition, { top: true, bottom: true, left: true, right: true }, "top") : "top";
+    var isHorizontal = hasIcon && (iconPosition === "left" || iconPosition === "right");
+    var mainAxisAlignment = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
 
     container.style.background = isBanner ? background(b.bgColor, "#fde047") : background(b.bgColor, "transparent");
     container.style.color = isBanner ? color(b.textColor, "#000000") : color(b.textColor, "inherit");
@@ -1141,7 +1176,8 @@
       : "none";
     container.style.borderRadius = scaledNumberPx(b.borderRadius, isBanner ? 8 : 0, 0, 100);
     container.style.flexDirection = isHorizontal ? "row" : "column";
-    container.style.alignItems = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
+    container.style.alignItems = mainAxisAlignment;
+    container.style.justifyContent = mainAxisAlignment;
     container.style.padding = scaledNumberPx(b.padding, 0, 0, 80);
     if (b.gap !== undefined) container.style.gap = scaledNumberPx(b.gap, 8, 0, 40);
     container.style.setProperty("--bp-size", scaledNumberPx(b.iconSize, 24, 8, 96));
@@ -1197,9 +1233,9 @@
     container.setAttribute("data-count", String(items.length));
     container.style.setProperty("--bp-size", scaledPx(dotIconSize));
     container.style.setProperty("--bp-gap", scaledNumberPx(b.itemGap, 16, 0, 80));
+    container.style.setProperty("--bp-item-pad", scaledNumberPx(b.padding, 0, 0, 80));
 
     items.forEach(function (item, idx) {
-      var isFirst = idx === 0;
       var isLast = idx === items.length - 1;
       var itemClass = "bp-timeline-item";
       if (preset === "vertical") itemClass = "bp-vertical-item";
@@ -1209,15 +1245,19 @@
       var itemNode = el("div", itemClass);
       var usesItemSurface = preset === "boxed_cards" || preset === "boxed_steps" || preset === "split_segments" || preset === "thick" || preset === "chevron";
       var stepBg = usesItemSurface ? background(item.bgColor, "") : "";
-      var dotBg = color(item.dotColor, isFirst ? accent : "#ffffff");
-      var stepIconColor = color(item.iconColor, isFirst ? "#ffffff" : accent);
+      var dotBg = color(item.dotColor, accent);
+      var stepIconColor = color(item.iconColor, isDarkHex(dotBg) ? "#ffffff" : color(theme.textColor, "#111827"));
+      var stepIconAnimation = Object.assign({}, b, {
+        lordiconPrimaryColor: stepIconColor,
+        lordiconSecondaryColor: stepIconColor
+      });
       if (stepBg) itemNode.style.background = stepBg;
       if (b.padding !== undefined) itemNode.style.padding = scaledNumberPx(b.padding, 16, 0, 80);
       itemNode.style.borderRadius = scaledNumberPx(b.borderRadius, 0, 0, 100);
 
       var hasItemBorder = preset === "boxed_cards" || preset === "boxed_steps" || preset === "split_segments";
       if (number(b.borderWidth, 0, 0, 10) > 0 && hasItemBorder) {
-        itemNode.style.border = number(b.borderWidth, 0, 0, 10) + "px solid " + color(item.borderColor, isFirst ? accent : "#eeeeee");
+        itemNode.style.border = number(b.borderWidth, 0, 0, 10) + "px solid " + color(item.borderColor, "#eeeeee");
       }
 
       if (!isLast && hasTimelineConnector(preset)) {
@@ -1237,7 +1277,7 @@
       dot.style.background = dotBg;
       dot.style.borderColor = usesItemSurface ? color(item.borderColor, dotBg) : dotBg;
       if (b.dotBorderWidth !== undefined) dot.style.borderWidth = number(b.dotBorderWidth, 2, 0, 20) + "px";
-      dot.appendChild(createIcon(item.icon, stepIconColor, iconSize, b));
+      dot.appendChild(createIcon(item.icon, stepIconColor, iconSize, stepIconAnimation));
       itemNode.appendChild(dot);
 
       var textWrap = el("div");
@@ -1530,7 +1570,7 @@
 
   function renderImage(block) {
     var b = block.settings || {};
-    var url = safeUrl(b.url);
+    var url = resolveOrnamentUrl(b.url);
     if (!url) return null;
     var wrap = el("div");
     wrap.style.textAlign = option(b.align, ALIGNMENTS, "center");
@@ -1551,6 +1591,73 @@
     return wrap;
   }
 
+  function renderOrnament(block) {
+    var b = block.settings || {};
+    var url = safeUrl(b.url);
+    if (!url) return null;
+
+    var wrap = el("div", "bp-block bp-ornament");
+    var placement = text(b.placement, "top-right");
+    var offsetX = scaledNumberPx(b.offsetX, 0, -40, 80);
+    var offsetY = scaledNumberPx(b.offsetY, 0, -40, 80);
+
+    wrap.style.position = "absolute";
+    wrap.style.width = "auto";
+    wrap.style.pointerEvents = "none";
+    wrap.style.zIndex = String(number(b.zIndex, 2, 0, 10));
+
+    if (placement === "top-left") {
+      wrap.style.left = offsetX;
+      wrap.style.top = offsetY;
+    } else if (placement === "top-center") {
+      wrap.style.left = "50%";
+      wrap.style.top = offsetY;
+      wrap.style.transform = "translateX(-50%)";
+    } else if (placement === "center-left") {
+      wrap.style.left = offsetX;
+      wrap.style.top = "50%";
+      wrap.style.transform = "translateY(-50%)";
+    } else if (placement === "center") {
+      wrap.style.left = "50%";
+      wrap.style.top = "50%";
+      wrap.style.transform = "translate(-50%, -50%)";
+    } else if (placement === "center-right") {
+      wrap.style.right = offsetX;
+      wrap.style.top = "50%";
+      wrap.style.transform = "translateY(-50%)";
+    } else if (placement === "bottom-left") {
+      wrap.style.left = offsetX;
+      wrap.style.bottom = offsetY;
+    } else if (placement === "bottom-center") {
+      wrap.style.left = "50%";
+      wrap.style.bottom = offsetY;
+      wrap.style.transform = "translateX(-50%)";
+    } else if (placement === "bottom-right") {
+      wrap.style.right = offsetX;
+      wrap.style.bottom = offsetY;
+    } else {
+      wrap.style.right = offsetX;
+      wrap.style.top = offsetY;
+    }
+
+    var img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.style.display = "block";
+    img.style.width = scaledCssSize(b.width, "72px");
+    img.style.height = scaledCssSize(b.height, "auto");
+    img.style.objectFit = "contain";
+    if (b.opacity !== undefined) img.style.opacity = number(b.opacity, 100, 10, 100) / 100;
+    if (b.rotation !== undefined) {
+      img.style.transform = "rotate(" + number(b.rotation, 0, -180, 180) + "deg)";
+      img.style.transformOrigin = "center center";
+    }
+
+    wrap.appendChild(img);
+    return wrap;
+  }
+
   function renderBlock(block, config, theme) {
     if (!block || !BLOCK_TYPES[block.type]) return null;
     var node = null;
@@ -1564,6 +1671,7 @@
     else if (block.type === "progress") node = renderProgress(block, config, theme);
     else if (block.type === "trust_badges") node = renderTrustBadges(block, config, theme);
     else if (block.type === "image") node = renderImage(block);
+    else if (block.type === "ornament") return renderOrnament(block);
     if (block.type === "divider") {
       var divider = el("div", "bp-divider");
       divider.style.display = "block";
@@ -1619,7 +1727,7 @@
     var bgColor = color(s.bgColor, "#ffffff");
     var borderColor = color(s.borderColor, "#e5e7eb");
     var shadow = option(s.shadow, SHADOWS, "none");
-    var theme = { iconColor: iconColor, borderColor: borderColor };
+    var theme = { iconColor: iconColor, borderColor: borderColor, textColor: textColor };
 
     var widget = el("div", "bp-widget bp-shadow-" + shadow + (s.glassmorphism ? " bp-glass" : ""));
     widget.style.setProperty("--bp-tc", textColor);

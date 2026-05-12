@@ -67,8 +67,6 @@ export const createTemplatePalette = (source: TemplateColorSource) => {
   const border = expandHex(source.borderColor || "") || mixHex(bg, accent, 0.22);
   const muted = mixHex(text, bg, luminance(bg) < 0.35 ? 0.35 : 0.45);
   const accentDark = mixHex(accent, text, 0.24);
-  const secondaryAccent = mixHex(accent, text, 0.36);
-  const tertiaryAccent = mixHex(accent, border, 0.42);
 
   return {
     text,
@@ -81,20 +79,19 @@ export const createTemplatePalette = (source: TemplateColorSource) => {
     accentSofter: mixHex(bg, accent, 0.07),
     accentBorder: mixHex(border, accent, 0.28),
     accentDark,
-    secondaryAccent,
-    tertiaryAccent,
-    secondarySoft: mixHex(bg, secondaryAccent, 0.11),
-    secondaryBorder: mixHex(border, secondaryAccent, 0.24),
+    secondaryAccent: accent,
+    tertiaryAccent: accent,
+    secondarySoft: mixHex(bg, accent, 0.11),
+    secondaryBorder: mixHex(border, accent, 0.24),
   };
 };
 
 export type TemplatePalette = ReturnType<typeof createTemplatePalette>;
 
-const sampleAccent = (palette: TemplatePalette, index: number) =>
-  [palette.accent, palette.secondaryAccent, palette.tertiaryAccent][index % 3];
+const sampleAccent = (palette: TemplatePalette, _index: number) => palette.accent;
 
 const sampleSoftBackground = (palette: TemplatePalette, index: number) =>
-  mixHex(palette.bg, sampleAccent(palette, index), 0.09 + (index % 3) * 0.025);
+  mixHex(palette.bg, sampleAccent(palette, index), 0.1);
 
 export const sampleStepColors = (palette: TemplatePalette, index: number) => {
   const accent = sampleAccent(palette, index);
@@ -173,7 +170,7 @@ const componentStyleSamples = (palette: TemplatePalette): Record<string, Record<
     color: palette.accent,
     trackBorderColor: palette.border,
     fillStyle: "gradient",
-    gradientEndColor: palette.secondaryAccent,
+    gradientEndColor: palette.accent,
   },
   dual_info: {
     leftBgColor: palette.accentSoft,
@@ -181,9 +178,9 @@ const componentStyleSamples = (palette: TemplatePalette): Record<string, Record<
     leftIconColor: palette.accent,
     leftTitleColor: palette.text,
     leftTextColor: palette.muted,
-    rightBgColor: palette.secondarySoft,
-    rightBorderColor: palette.secondaryBorder,
-    rightIconColor: palette.secondaryAccent,
+    rightBgColor: palette.accentSoft,
+    rightBorderColor: palette.accentBorder,
+    rightIconColor: palette.accent,
     rightTitleColor: palette.text,
     rightTextColor: palette.muted,
     borderWidth: 1,

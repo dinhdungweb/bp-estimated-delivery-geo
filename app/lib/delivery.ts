@@ -60,8 +60,10 @@ export type WidgetStyleId =
   | "informative_dispatch_stack"
   | "seasonal_holiday_gift"
   | "seasonal_summer_fresh"
+  | "seasonal_new_year_delivery"
+  | "seasonal_halloween_shipping"
+  | "seasonal_gift_ready"
   | "animated_countdown_priority"
-  | "industry_premium_pack"
   | "process_split_fulfillment"
   | "dark_command_route"
   | "light_concierge_eta"
@@ -83,6 +85,7 @@ export type BlockType =
   | "progress"
   | "html"
   | "image"
+  | "ornament"
   | "dual_info";
 
 export interface BlockConfig {
@@ -340,6 +343,7 @@ const BLOCK_TYPES = new Set<BlockType>([
   "progress",
   "html",
   "image",
+  "ornament",
   "dual_info",
 ]);
 

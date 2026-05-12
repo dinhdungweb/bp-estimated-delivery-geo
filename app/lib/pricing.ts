@@ -47,6 +47,7 @@ export const COMPONENT_ENTITLEMENTS: Record<BlockType, PlanHandle> = {
   divider: "free",
   spacer: "free",
   image: "free",
+  ornament: "free",
   timer: "growth",
   banner: "growth",
   promise_card: "growth",
@@ -95,7 +96,7 @@ export const PRICING_PLANS: Record<PlanHandle, PricingPlan> = {
     features: [
       "1 active delivery rule",
       "1 saved My Design",
-      "Basic components: header, steps, image, divider, spacer",
+      "Basic components: header, steps, image, ornament, divider, spacer",
       "Standard Line steps with static icons",
       "Basic 7-day analytics",
     ],

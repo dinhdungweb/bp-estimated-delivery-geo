@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Holiday gift">
+  <g transform="rotate(8 48 48)">
+    <rect x="18" y="36" width="60" height="46" rx="7" fill="#ef5b4f"/>
+    <rect x="18" y="36" width="60" height="15" rx="6" fill="#ff7b6d"/>
+    <rect x="43" y="34" width="10" height="48" fill="#f7d488"/>
+    <rect x="18" y="48" width="60" height="7" fill="#d9473f" opacity=".35"/>
+    <path d="M48 34c-7-13-22-15-25-7-3 9 11 12 25 7z" fill="#f7d488"/>
+    <path d="M48 34c7-13 22-15 25-7 3 9-11 12-25 7z" fill="#f7d488"/>
+    <path d="M48 34c-4-7-11-10-16-8M48 34c4-7 11-10 16-8" fill="none" stroke="#bd7d28" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="48" cy="35" r="5" fill="#e7b95e"/>
+  </g>
+</svg>

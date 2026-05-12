@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Summer sun">
+  <g fill="none" stroke="#f5b948" stroke-linecap="round" stroke-width="5">
+    <path d="M48 9v12M48 75v12M9 48h12M75 48h12M20 20l8.5 8.5M67.5 67.5L76 76M76 20l-8.5 8.5M28.5 67.5L20 76"/>
+  </g>
+  <circle cx="48" cy="48" r="22" fill="#f8c852"/>
+  <circle cx="41" cy="41" r="5" fill="#ffe193" opacity=".8"/>
+</svg>
