@@ -1,0 +1,176 @@
+
+> dev
+> npm run css:sync && shopify app dev --store bp-estimated-delivery-geo.myshopify.com
+
+
+> css:sync
+> node -e "const fs = require('fs'); const css = fs.readFileSync('app/styles/bp-delivery.css'); fs.writeFileSync('extensions/bp-estimated-delivery/assets/bp-delivery.css', css);"
+
+╭─ info ───────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  Using shopify.app.toml for default values:                                  │
+│                                                                              │
+│    • Org:             Bluepeaks Studio                                       │
+│    • App:             BP: Estimated Delivery Pro                             │
+│    • Dev store:       bp-estimated-delivery-geo.myshopify.com                │
+│    • Update URLs:     Yes                                                    │
+│                                                                              │
+│   You can pass `--reset` to your command to reset your app configuration.    │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆
+▅▅▄▄▃▃▂▂▁▁
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[1A[2K[G▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇█
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅▆▆▇▇██▇▇▆▆▅▅▄▄▃▃▂▂▁▁▁▁▂▂▃▃▄▄▅▅
+Configuring host theme for theme app extension ...
+[2K[1A[2K[1A[2K[G
+╭─ info ───────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  The theme app extension development server is ready.                        │
+│                                                                              │
+│  Next steps                                                                  │
+│    1. Install your app in your development store [1]                         │
+│    2. Setup your theme app extension in the host theme [2]                   │
+│    3. Preview your theme app extension at http://127.0.0.1:9293              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[1] https://admin.shopify.com/?organization_id=140083657&no_redirect=true&redire
+ct=/oauth/redirect_from_developer_dashboard?client_id%3Dfdf944db46b40d63062eb6d9
+b5abe80c
+[2]
+https://bp-estimated-delivery-geo.myshopify.com/admin/themes/153360466057/editor
+
+Running pre-dev command: "npx prisma generate"Preparing dev preview on bp-estimated-delivery-geo.myshopify.comGraphiQL server started on port 3457Proxy server started on port 65495 Running theme check on your Theme app extension...Bundling theme extension bp-estimated-delivery-pro...Environment variables loaded from .env
+✅ Ready, watching for changes in your app │ Access scopes auto-granted: read_customers, read_markets, read_orders, read_products, read_themes│ Using URL: https://hobbies-watt-wars-lakes.trycloudflare.com/apps/bp-delivery│ Any changes to prefix and subpath will only apply to new installs└ Using URL: https://hobbies-watt-wars-lakes.trycloudflare.comEnvironment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "bp_estimated_delivery", schema "public" at "localhost:5432"
+
+16 migrations found in prisma/migrations
+
+
+No pending migrations to apply.
+Error forwarding web request: connect ECONNREFUSED 127.0.0.1:65498└  Unreachable target "http://localhost:65498" for path: "/app/templates?embedded=1&hmac=31c9f2d638e680ea9e94f37b58914247920d3a43cc8d1c177b7cc475570ab992&host=YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvYnAtZXN0aW1hdGVkLWRlbGl2ZXJ5LWdlbw&id_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczpcL1wvYnAtZXN0aW1hdGVkLWRlbGl2ZXJ5LWdlby5teXNob3BpZnkuY29tXC9hZG1pbiIsImRlc3QiOiJodHRwczpcL1wvYnAtZXN0aW1hdGVkLWRlbGl2ZXJ5LWdlby5teXNob3BpZnkuY29tIiwiYXVkIjoiZmRmOTQ0ZGI0NmI0MGQ2MzA2MmViNmQ5YjVhYmU4MGMiLCJzdWIiOiI5OTI3MTkzNDA4OSIsImV4cCI6MTc3ODU2MzM3MywibmJmIjoxNzc4NTYzMzEzLCJpYXQiOjE3Nzg1NjMzMTMsImp0aSI6Ijc5YjgxZmI1LTU3OTUtNDU3NS1iZGZjLWNjMzYwYzkxN2Y2OCIsInNpZCI6Ijk4ZDdkYzZjLTdkODAtNGNiMC1iYmI4LTBmZDA2Y2MxNTZiMyIsInNpZyI6ImI3MTNkNzAxYmE0Yzk0NjA3ODYzMWEzYzYyMDZiYWIyNWY2NTcyZjJiZGMxMjBhOWE1NjA4NmUxMTI2ZTM5YjMifQ.xHE8ZiA7q7o06sMK-14djyUp-6s0GRl94yWeWIiwDvA&locale=en-US&session=665bbfc25b8e2f797e99ac279bebb5b4b8e0aaec15276a6c9feca63f109d2f4c&shop=bp-estimated-delivery-geo.myshopify.com&timestamp=1778563313"  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m65498[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Authenticating admin request | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] No valid session found | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Requesting offline access token | {shop: bp-estimated-delivery-geo.myshopify.com}
+config.future.expiringOfflineAccessTokens true
+[shopify-app/INFO] No valid session found | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Requesting offline access token | {shop: bp-estimated-delivery-geo.myshopify.com}
+config.future.expiringOfflineAccessTokens true
+[shopify-api/INFO] Creating new session | {shop: bp-estimated-delivery-geo.myshopify.com, isOnline: false}
+[shopify-api/INFO] Creating new session | {shop: bp-estimated-delivery-geo.myshopify.com, isOnline: false}
+[2m12:26:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx[22m
+[2m12:26:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx[22m
+[2m12:26:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx[22m
+[2m12:26:28 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Authenticating admin request | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Authenticating admin request | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Authenticating admin request | {shop: bp-estimated-delivery-geo.myshopify.com}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[2m12:33:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:33:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:33:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:33:41 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[2m12:33:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:33:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:33:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:33:57 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[2m12:34:53 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:34:53 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:34:53 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:34:53 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[2m12:35:46 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:35:46 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:35:46 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:35:46 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[2m12:36:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:36:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:36:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:36:57 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[shopify-api/INFO] version 13.0.0, environment React Router
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[shopify-app/INFO] Authenticating admin request | {shop: null}
+[2m12:50:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:50:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:50:09 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:50:09 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[2m12:50:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:50:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:50:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:50:41 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[2m12:51:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:51:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:51:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:51:20 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[2m12:54:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:54:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:54:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:54:00 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[2m12:54:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:54:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:54:06 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m12:54:06 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[2m1:00:08 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m1:00:08 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m1:00:08 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m1:00:08 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m
+[2m1:01:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx[22m
+[2m1:01:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx[22m
+[2m1:01:04 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx[22m
+[2m1:01:04 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/lib/widgetStyleSamples.ts[22m
+[2m1:01:26 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m1:01:26 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m1:01:26 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/app/tailwind.css?direct, /app/routes/app.templates.tsx, /app/routes/app.pricing.tsx[22m
+[2m1:01:26 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2mapp/constants/templateDefaults.ts[22m

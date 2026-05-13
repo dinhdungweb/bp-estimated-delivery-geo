@@ -9,7 +9,7 @@ embedded = true
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2026-07"
+api_version = "2024-10"
 
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
@@ -20,16 +20,16 @@ api_version = "2026-07"
   uri = "/webhooks/app/scopes_update"
 
 [webhooks.compliance]
-customer_data_request_url = "/webhooks/customers/data_request"
-customer_redact_url = "/webhooks/customers/redact"
-shop_redact_url = "/webhooks/shop/redact"
+customer_data_request_url = "https://estimated-delivery.bluepeaks.top/webhooks/customers/data_request"
+customer_redact_url = "https://estimated-delivery.bluepeaks.top/webhooks/customers/redact"
+shop_redact_url = "https://estimated-delivery.bluepeaks.top/webhooks/customers/redact"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_customers,read_orders,read_products,read_themes,read_markets"
 
 [auth]
-redirect_urls = [ "https://estimated-delivery.bluepeaks.top/api/auth" ]
+redirect_urls = [ "https://estimated-delivery.bluepeaks.top/auth/callback" ]
 
 [app_proxy]
 url = "https://estimated-delivery.bluepeaks.top/apps/bp-delivery"
