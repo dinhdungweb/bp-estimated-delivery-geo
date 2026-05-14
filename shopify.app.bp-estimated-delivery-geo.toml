@@ -19,10 +19,9 @@ api_version = "2024-10"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-[webhooks.compliance]
-customer_data_request_url = "https://estimated-delivery.bluepeaks.top/webhooks/customers/data_request"
-customer_redact_url = "https://estimated-delivery.bluepeaks.top/webhooks/customers/redact"
-shop_redact_url = "https://estimated-delivery.bluepeaks.top/webhooks/customers/redact"
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
